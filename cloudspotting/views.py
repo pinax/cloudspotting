@@ -1,7 +1,6 @@
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.urlresolvers import reverse, reverse_lazy
 from django.http import HttpResponseRedirect
-from django.shortcuts import render
 from django.views.generic import (
     CreateView,
     DeleteView,
@@ -29,8 +28,6 @@ class CloudSpottingCreateView(LoginRequiredMixin, CreateView):
     """
     model = CloudSpotting
     fields = ["cloud_type"]
-    template_name = "cloudspotting/cloudspotting_form.html"
-
 
     def form_valid(self, form):
         form.instance.user = self.request.user
@@ -42,7 +39,6 @@ class CloudSpottingDetailView(LoginRequiredMixin, DetailView):
     Display a specific CloudSpotting collection.
     """
     model = CloudSpotting
-    template_name = "cloudspotting/cloudspotting_detail.html"
 
 
 class CloudSpottingListView(LoginRequiredMixin, ListView):
@@ -50,7 +46,6 @@ class CloudSpottingListView(LoginRequiredMixin, ListView):
     Display a list of CloudSpotting collections.
     """
     model = CloudSpotting
-    template_name = "cloudspotting/cloudspotting_list.html"
 
 
 class UserCloudSpottingMixin(LoginRequiredMixin):
@@ -68,7 +63,6 @@ class CloudSpottingUpdateView(UserCloudSpottingMixin, UpdateView):
     Update details about a CloudSpotting collection.
     """
     fields = ["cloud_type"]
-    template_name = "cloudspotting/cloudspotting_form.html"
 
 
 class CloudSpottingDeleteView(UserCloudSpottingMixin, DeleteView):
@@ -76,4 +70,3 @@ class CloudSpottingDeleteView(UserCloudSpottingMixin, DeleteView):
     Delete a CloudSpotting collection.
     """
     success_url = reverse_lazy("cloudspotting_list")
-    template_name = "cloudspotting/cloudspotting_confirm_delete.html"

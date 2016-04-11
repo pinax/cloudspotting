@@ -1,0 +1,16 @@
+{% extends "site_base.html" %}
+
+{% load i18n %}
+
+{% block head_title %}CloudSpotting{% endblock %}
+
+{% block body_class %}home{% endblock %}
+
+{% block body_base %}
+    <section>
+        <div class="container">
+            <h2 class="text-center">{% blocktrans %}Create/Update{% endblocktrans %}</h2>
+            {{ form }}
+        </div>
+    </section>
+{% endblock body_base %}

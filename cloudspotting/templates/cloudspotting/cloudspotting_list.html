@@ -1,0 +1,21 @@
+{% extends "site_base.html" %}
+
+{% load i18n %}
+
+{% block head_title %}CloudSpotting{% endblock %}
+
+{% block body_class %}home{% endblock %}
+
+{% block body_base %}
+    <section>
+        <div class="container">
+            <h2 class="text-center">{% blocktrans %}List{% endblocktrans %}</h2>
+
+            {% for cloudspotting in object_list %}
+            <a href="{% url "cloudspotting_detail" cloudspotting.pk %}">{{ cloudspotting }}</a>
+            {% endfor %}
+
+            <a href="{% url "cloudspotting_create" %}">Add CloudSpotting</a>
+        </div>
+    </section>
+{% endblock body_base %}
