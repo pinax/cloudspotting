@@ -7,7 +7,7 @@ from .test import TestCase
 class TestViews(TestCase):
 
     def setUp(self):
-        super(Tests, self).setUp()
+        super(TestViews, self).setUp()
         self.user = self.make_user("cirrus")
         self.cloud_type = "cumulonimbus"
         self.spotting = CloudSpotting.objects.create(
