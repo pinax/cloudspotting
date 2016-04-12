@@ -10,6 +10,8 @@ from django.views.generic import (
     UpdateView,
 )
 
+from pinax.images.models import ImageSet
+
 from .models import CloudSpotting
 
 
@@ -31,6 +33,7 @@ class CloudSpottingCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.user = self.request.user
+        form.instance.image_set = ImageSet.objects.create(created_by=self.request.user)
         return super(CloudSpottingCreateView, self).form_valid(form)
 
 

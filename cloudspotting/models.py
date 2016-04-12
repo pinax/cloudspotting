@@ -13,7 +13,7 @@ class CloudSpotting(models.Model):
     """
     cloud_type = models.CharField(max_length=100)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="+")
-    image_set = models.ForeignKey(ImageSet, blank=True, null=True)
+    image_set = models.OneToOneField(ImageSet)
 
     class Meta:
         unique_together = ("cloud_type", "user")
