@@ -6,7 +6,6 @@
 
 {% block body_class %}images{% endblock %}
 
-{% block body_base %}
 {% with cloudspotting.image_set as image_set %}
 {% if image_set %}
     {% url "pinax_images:imageset_upload" image_set.pk as upload_url %}
@@ -14,14 +13,11 @@
     {% url "pinax_images:imageset_new_upload" as upload_url %}
 {% endif %}
 
-    <section>
-        <div class="container">
-            <h2 class="text-center">{{ cloudspotting }}</h2>
-        </div>
 
         <div id="image-panel" data-images-url="{% if image_set %}{% url "images" image_set.pk %}{% endif %}" data-upload-url="{{ upload_url }}" data-image-set-id="{{ image_set.pk }}">
+{% block body %}
+        <h2 class="text-center">{{ cloudspotting }}</h2>
         </div>
-    </section>
 {% endwith %}
 {% endblock %}
 
