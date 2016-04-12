@@ -10,6 +10,8 @@
     <section>
         <div class="container">
             <h2 class="text-center">{% blocktrans %}Create/Update{% endblocktrans %}</h2>
+        </div>
+        <div class="container">
             <form action="{% url "cloudspotting_create" %}" method="post">
                 {% csrf_token %}
                 {{ form }}

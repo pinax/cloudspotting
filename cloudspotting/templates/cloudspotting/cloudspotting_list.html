@@ -11,10 +11,15 @@
         <div class="container">
             <h2 class="text-center">{% blocktrans %}List{% endblocktrans %}</h2>
 
+            <ul>
             {% for cloudspotting in object_list %}
+            <li>
             <a href="{% url "cloudspotting_detail" cloudspotting.pk %}">{{ cloudspotting }}</a>
+            </li>
             {% endfor %}
+        </div>
 
+        <div class="container">
             <a href="{% url "cloudspotting_create" %}">Add CloudSpotting</a>
         </div>
     </section>

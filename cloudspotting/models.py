@@ -17,6 +17,7 @@ class CloudSpotting(models.Model):
 
     class Meta:
         unique_together = ("cloud_type", "user")
+        ordering = ["user", "cloud_type"]
 
     def get_absolute_url(self):
         return reverse("cloudspotting_detail", kwargs=({"pk": self.pk}))
