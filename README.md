@@ -9,7 +9,7 @@ This collection can be found at http://pinaxproject.com.
 
 This starter project was developed as part of the Pinax ecosystem.
 
-# cloudspotting
+## cloudspotting
 
 `cloudspotting` is a starter project which allows you to create collections of similar cloud images, view other people’s collections, “like” a collection, etc.
 
@@ -26,7 +26,7 @@ pip install -r requirements.txt
 ./manage.py runserver
 ```
 
-# Documentation
+## Documentation
 
 The `cloudspotting` documentation is currently under construction. 
 
