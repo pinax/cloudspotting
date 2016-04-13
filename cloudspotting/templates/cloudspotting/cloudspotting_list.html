@@ -16,7 +16,7 @@
             {% liked object_list by request.user as liked_list %}
             {% for cloudspotting in liked_list %}
             <li>
-            {% if obj.liked %}* {% endif %}<a href="{% url "cloudspotting_detail" cloudspotting.pk %}">{{ cloudspotting }}</a>
+            <a href="{% url "cloudspotting_detail" cloudspotting.pk %}">{{ cloudspotting }}</a>{% if cloudspotting.liked %} (liked){% endif %}
             </li>
             {% endfor %}
         </div>
