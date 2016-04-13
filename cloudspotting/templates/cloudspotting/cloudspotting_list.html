@@ -1,6 +1,7 @@
 {% extends "site_base.html" %}
 
 {% load i18n %}
+{% load pinax_likes_tags %}
 
 {% block head_title %}CloudSpotting{% endblock %}
 
@@ -12,9 +13,10 @@
             <h2 class="text-center">{% blocktrans %}List{% endblocktrans %}</h2>
 
             <ul>
-            {% for cloudspotting in object_list %}
+            {% liked object_list by request.user as liked_list %}
+            {% for cloudspotting in liked_list %}
             <li>
-            <a href="{% url "cloudspotting_detail" cloudspotting.pk %}">{{ cloudspotting }}</a>
+            <a href="{% url "cloudspotting_detail" cloudspotting.pk %}">{{ cloudspotting }}</a>{% if cloudspotting.liked %} (liked){% endif %}
             </li>
             {% endfor %}
         </div>
