@@ -24,6 +24,7 @@ setup(
     install_requires=[
         "django-user-accounts>=1.3.1",
         "pinax-images>=0.2.0",
+        "pinax-likes>=1.3.1",
         "pinax-eventlog==1.1.1",
         "pinax-theme-bootstrap>=7.7.0",
         "pinax-webanalytics>=2.0.1",

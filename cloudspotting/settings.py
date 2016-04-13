@@ -133,6 +133,7 @@ INSTALLED_APPS = [
     "account",
     "pinax.eventlog",
     "pinax.images",
+    "pinax.likes",
     "pinax.testimonials",
     "pinax.webanalytics",
 
@@ -185,4 +186,9 @@ ACCOUNT_USE_AUTH_AUTHENTICATE = True
 
 AUTHENTICATION_BACKENDS = [
     "account.auth_backends.UsernameAuthenticationBackend",
+    "pinax.likes.auth_backends.CanLikeBackend",
 ]
+
+PINAX_LIKES_LIKABLE_MODELS = {
+    "cloudspotting.CloudSpotting": {},
+}
