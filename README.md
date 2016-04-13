@@ -1,22 +1,11 @@
 # Cloudspotting
 
-.. image:: http://slack.pinaxproject.com/badge.svg
-   :target: http://slack.pinaxproject.com/
-
-.. image:: https://img.shields.io/travis/pinax/cloudspotting.svg
-    :target: https://travis-ci.org/pinax/cloudspotting
-
-.. image:: https://img.shields.io/coveralls/pinax/cloudspotting.svg
-    :target: https://coveralls.io/r/pinax/cloudspotting
-
-.. image:: https://img.shields.io/pypi/dm/cloudspotting.svg
-    :target:  https://pypi.python.org/pypi/cloudspotting/
-
-.. image:: https://img.shields.io/pypi/v/cloudspotting.svg
-    :target:  https://pypi.python.org/pypi/cloudspotting/
-
-.. image:: https://img.shields.io/badge/license-MIT-blue.svg
-    :target:  https://pypi.python.org/pypi/cloudspotting/
+[![](http://slack.pinaxproject.com/badge.svg)](http://slack.pinaxproject.com/)
+[![](https://img.shields.io/travis/pinax/cloudspotting.svg)](https://travis-ci.org/pinax/cloudspotting)
+[![](https://img.shields.io/coveralls/pinax/cloudspotting.svg)](https://coveralls.io/r/pinax/cloudspotting)
+[![](https://img.shields.io/pypi/dm/cloudspotting.svg)](https://pypi.python.org/pypi/cloudspotting/)
+[![](https://img.shields.io/pypi/v/cloudspotting.svg)](https://pypi.python.org/pypi/cloudspotting/)
+[![](https://img.shields.io/badge/license-MIT-blue.svg)](https://pypi.python.org/pypi/cloudspotting/)
 
 ## Pinax
 
