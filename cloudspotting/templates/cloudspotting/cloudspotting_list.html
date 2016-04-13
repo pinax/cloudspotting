@@ -2,6 +2,7 @@
 
 {% load i18n %}
 {% load pinax_likes_tags %}
+{% load testimonial_tags %}
 
 {% block head_title %}CloudSpotting{% endblock %}
 
@@ -23,6 +24,17 @@
 
         <div class="container">
             <a href="{% url "cloudspotting_create" %}">Add CloudSpotting</a>
+        </div>
+    </section>
+    <section>
+        <div class="container">
+            <h2 class="text-center">{% blocktrans %}Testimonials{% endblocktrans %}</h2>
+            <div>
+                {% random_testimonial as quote %}
+                {% if quote %}
+                "{{ quote.0.text }}" - {{ quote.0.author }}
+                {% endif %}
+            </div>
         </div>
     </section>
 {% endblock body_base %}

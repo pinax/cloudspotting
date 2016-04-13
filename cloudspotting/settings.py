@@ -134,6 +134,7 @@ INSTALLED_APPS = [
     "pinax.eventlog",
     "pinax.images",
     "pinax.likes",
+    "pinax.testimonials",
     "pinax.webanalytics",
 
     # project
