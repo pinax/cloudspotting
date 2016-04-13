@@ -3,6 +3,7 @@
 {% load i18n %}
 {% load pinax_likes_tags %}
 {% load testimonial_tags %}
+{% load pinax_announcements_tags %}
 
 {% block head_title %}CloudSpotting{% endblock %}
 
@@ -11,7 +12,7 @@
 {% block body_base %}
     <section>
         <div class="container">
-            <h2 class="text-center">{% blocktrans %}List{% endblocktrans %}</h2>
+            <h2 class="text-center">{% blocktrans %}CloudSpotting List{% endblocktrans %}</h2>
 
             <ul>
             {% liked object_list by request.user as liked_list %}
@@ -37,4 +38,31 @@
             </div>
         </div>
     </section>
+
+
+    {% announcements as announcements_list %}
+    {% if announcements_list %}
+    <section>
+        <div class="container">
+            <h2 class="text-center">{% blocktrans %}Announcements{% endblocktrans %}</h2>
+
+
+            <div class="announcements">
+                {% for announcement in announcements_list %}
+                    <div class="announcement">
+                        <strong>{{ announcement.title }}</strong><br />
+                        {{ announcement.content }}
+                        {% if announcement.dismiss_url %}
+                            <a href="{{ announcement.dismiss_url }}" class="btn ajax" data-method="post" data-replace-closest=".announcement">
+                                Clear
+                            </a>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+
 {% endblock body_base %}
