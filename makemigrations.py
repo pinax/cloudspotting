@@ -21,6 +21,7 @@ DEFAULT_SETTINGS = dict(
         "account",
         "pinax.eventlog",
         "pinax.images",
+        "pinax.likes",
         "pinax.webanalytics",
 
         # project

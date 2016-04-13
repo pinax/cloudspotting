@@ -1,6 +1,7 @@
 {% extends "site_base.html" %}
 
 {% load i18n %}
+{% load pinax_likes_tags %}
 
 {% block head_title %}{{ cloudspotting.cloud_type }}{% endblock %}
 
@@ -20,6 +21,9 @@
                 <div id="image-panel" data-images-url="{% if image_set %}{% url "pinax_images:imageset_detail" image_set.pk %}{% endif %}" data-upload-url="{{ upload_url }}" data-image-set-id="{{ image_set.pk }}">
                 </div>
             </div>
+        </div>
+        <div>
+        {% likes_widget request.user cloudspotting %}
         </div>
     {% endwith %}
 {% endblock %}
