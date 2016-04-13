@@ -1,5 +1,7 @@
 from django.core.urlresolvers import reverse
 
+from pinax.images.models import ImageSet
+
 from ..models import CloudSpotting
 from .test import TestCase
 
@@ -12,7 +14,8 @@ class TestViews(TestCase):
         self.cloud_type = "cumulonimbus"
         self.spotting = CloudSpotting.objects.create(
             cloud_type=self.cloud_type,
-            user=self.user
+            user=self.user,
+            image_set=ImageSet.objects.create(created_by=self.user)
         )
 
     def test_list(self):
