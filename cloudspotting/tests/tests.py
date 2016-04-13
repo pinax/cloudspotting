@@ -1,6 +1,7 @@
 from django.contrib.contenttypes.models import ContentType
 from django.core.urlresolvers import reverse
 
+from pinax.announcements.models import Announcement
 from pinax.images.models import ImageSet
 from pinax.likes.models import Like
 
@@ -132,3 +133,32 @@ class TestLikes(TestCase):
             response = self.get("cloudspotting_list")
             self.response_200()
             self.assertIn(b"(liked)", response.content)
+
+
+class TestAnnouncements(TestCase):
+
+    def setUp(self):
+        super(TestAnnouncements, self).setUp()
+        self.user = self.make_user("cirrus")
+        self.staff = self.make_user("staff")
+        # Make this user "staff" for "can_manage" permission.
+        self.staff.is_staff = True
+        self.staff.save()
+        self.assertTrue(self.staff.has_perm("announcements.can_manage"))
+
+    def test_announcements(self):
+        """
+        Ensure page showing announcements contains new announcement.
+        """
+        title = "Election Results"
+        announcement = Announcement.objects.create(
+            title=title,
+            content="some results",
+            creator=self.staff,
+            site_wide=True
+        )
+        announcement.save()
+        with self.login(self.user):
+            response = self.get("cloudspotting_list")
+            self.response_200()
+            self.assertIn(bytes(title, encoding="utf-8"), response.content)

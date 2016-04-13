@@ -13,6 +13,7 @@ urlpatterns = [
     url(r"^account/", include("account.urls")),
     url(r"^ajax/images/", include("pinax.images.urls", namespace="pinax_images")),
     url(r"^likes/", include("pinax.likes.urls", namespace="pinax_likes")),
+    url(r"^announcements/", include("pinax.announcements.urls", namespace="pinax_announcements")),
 
     url(r"^cloudspotting/$",
         views.CloudSpottingListView.as_view(),
