@@ -4,6 +4,7 @@ window.jQuery = window.$ = require('jquery');
 const $ = window.$;
 
 require('bootstrap');
+require('eldarion-ajax');
 
 const React = require('react');
 const ReactDOM = require('react-dom');
