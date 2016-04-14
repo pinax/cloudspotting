@@ -5,8 +5,9 @@ from pinax.announcements.models import Announcement
 from pinax.images.models import ImageSet
 from pinax.likes.models import Like
 
-from ..models import CloudSpotting
-from .test import TestCase
+from test_plus.test import TestCase
+
+from .models import CloudSpotting
 
 
 class TestViews(TestCase):
