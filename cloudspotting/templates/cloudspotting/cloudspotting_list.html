@@ -2,7 +2,7 @@
 
 {% load i18n %}
 {% load pinax_likes_tags %}
-{% load testimonial_tags %}
+{% load pinax_testimonials_tags %}
 {% load pinax_announcements_tags %}
 
 {% block head_title %}CloudSpotting{% endblock %}
@@ -33,7 +33,7 @@
             <div>
                 {% random_testimonial as quote %}
                 {% if quote %}
-                "{{ quote.0.text }}" - {{ quote.0.author }}
+                "{{ quote.text }}" - {{ quote.author }}
                 {% endif %}
             </div>
         </div>

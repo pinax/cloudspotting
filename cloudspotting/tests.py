@@ -26,9 +26,8 @@ class TestViews(TestCase):
         """
         Ensure list contains all CloudSpotting collections.
         """
-        path = reverse("cloudspotting_list")
         with self.login(self.user):
-            self.get(path)
+            self.get("cloudspotting_list")
             self.response_200()
             object_list = self.get_context("object_list")
             self.assertEqual(object_list[0], self.spotting)
