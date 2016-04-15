@@ -9,60 +9,53 @@
 
 {% block body_class %}home{% endblock %}
 
-{% block body_base %}
-    <section>
-        <div class="container">
-            <h2 class="text-center">{% blocktrans %}CloudSpotting List{% endblocktrans %}</h2>
+{% block body %}
 
-            <ul>
-            {% liked object_list by request.user as liked_list %}
-            {% for cloudspotting in liked_list %}
-            <li>
-            <a href="{% url "cloudspotting_detail" cloudspotting.pk %}">{{ cloudspotting }}</a>{% if cloudspotting.liked %} (liked){% endif %}
-            </li>
-            {% endfor %}
+    <h2 class="text-center">{% blocktrans %}CloudSpotting List{% endblocktrans %}</h2>
+    <p><a href="{% url "cloudspotting_create" %}" class="btn btn-default">Add CloudSpotting</a></p>
+    <div class="row">
+        {% liked object_list by request.user as liked_list %}
+        {% for cloudspotting in liked_list %}
+        <div class="col-md-4">
+            <h4>{{ cloudspotting }}</h4>
+            <div class="media-panel">
+                <a href="{% url "cloudspotting_detail" cloudspotting.pk %}">
+                    {% with cloudspotting.image_set.image_data.primaryImage|default:cloudspotting.image_set.image_data.images.0 as image %}
+                        <img class="{% if image.is_primary %}primary{% endif %}" style="width:100%" src="{{ image.medium_thumbnail }}" />
+                    {% endwith %}
+                </a>
+            </div>
+            {% if cloudspotting.liked %}<i class="fa fa-heart text-danger"></i>{% else %}<i class="fa fa-heart-o"></i>{% endif %}
         </div>
+        {% endfor %}
+    </div>
 
-        <div class="container">
-            <a href="{% url "cloudspotting_create" %}">Add CloudSpotting</a>
-        </div>
-    </section>
-    <section>
-        <div class="container">
-            <h2 class="text-center">{% blocktrans %}Testimonials{% endblocktrans %}</h2>
-            <div>
-                {% random_testimonial as quote %}
-                {% if quote %}
-                "{{ quote.text }}" - {{ quote.author }}
+    <h2 class="text-center">{% blocktrans %}Testimonials{% endblocktrans %}</h2>
+    <div>
+        {% random_testimonial as quote %}
+        {% if quote %}
+        "{{ quote.text }}" - {{ quote.author }}
+        {% endif %}
+    </div>
+
+{% announcements as announcements_list %}
+{% if announcements_list %}
+    <h2 class="text-center">{% blocktrans %}Announcements{% endblocktrans %}</h2>
+
+    <div class="announcements">
+        {% for announcement in announcements_list %}
+            <div class="announcement">
+                <strong>{{ announcement.title }}</strong><br />
+                {{ announcement.content }}
+                {% if announcement.dismiss_url %}
+                    <a href="{{ announcement.dismiss_url }}" class="btn ajax" data-method="post" data-replace-closest=".announcement">
+                        Clear
+                    </a>
                 {% endif %}
             </div>
-        </div>
-    </section>
+        {% endfor %}
+    </div>
+{% endif %}
 
 
-    {% announcements as announcements_list %}
-    {% if announcements_list %}
-    <section>
-        <div class="container">
-            <h2 class="text-center">{% blocktrans %}Announcements{% endblocktrans %}</h2>
-
-
-            <div class="announcements">
-                {% for announcement in announcements_list %}
-                    <div class="announcement">
-                        <strong>{{ announcement.title }}</strong><br />
-                        {{ announcement.content }}
-                        {% if announcement.dismiss_url %}
-                            <a href="{{ announcement.dismiss_url }}" class="btn ajax" data-method="post" data-replace-closest=".announcement">
-                                Clear
-                            </a>
-                        {% endif %}
-                    </div>
-                {% endfor %}
-            </div>
-        </div>
-    </section>
-    {% endif %}
-
-
-{% endblock body_base %}
+{% endblock %}

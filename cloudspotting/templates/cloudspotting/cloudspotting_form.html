@@ -6,17 +6,11 @@
 
 {% block body_class %}home{% endblock %}
 
-{% block body_base %}
-    <section>
-        <div class="container">
-            <h2 class="text-center">{% blocktrans %}Create/Update{% endblocktrans %}</h2>
-        </div>
-        <div class="container">
-            <form action="{% url "cloudspotting_create" %}" method="post">
-                {% csrf_token %}
-                {{ form }}
-                <input type="submit" value="Save" />
-            </form>
-        </div>
-    </section>
-{% endblock body_base %}
+{% block body %}
+    <h2 class="text-center">{% blocktrans %}Create/Update{% endblocktrans %}</h2>
+    <form action="{% url "cloudspotting_create" %}" method="post">
+        {% csrf_token %}
+        {{ form }}
+        <button class="btn btn-primary">Save</button>
+    </form>
+{% endblock %}
