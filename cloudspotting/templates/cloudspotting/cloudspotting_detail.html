@@ -17,7 +17,7 @@
         <h2 class="text-center">{{ cloudspotting }}</h2>
 
         <div class="row">
-            <div class="col-md-4">
+            <div class="col-md-6">
                 <div id="image-panel" data-images-url="{% if image_set %}{% url "pinax_images:imageset_detail" image_set.pk %}{% endif %}" data-upload-url="{{ upload_url }}" data-image-set-id="{{ image_set.pk }}">
                 </div>
             </div>
