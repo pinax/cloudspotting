@@ -91,7 +91,7 @@ class TestLikes(TestCase):
 
     def test_detail_like(self):
         """
-        Ensure rendered detail contains expected "like" text.
+        Ensure template context object is liked.
         """
         with self.login(self.user):
             # Get detail for a not-liked collection.
@@ -109,12 +109,12 @@ class TestLikes(TestCase):
             # Make sure the Like/Unlike value has toggled to "Unlike"
             response = self.get("cloudspotting_detail", pk=self.spotting.pk)
             self.response_200()
-            self.assertIn(b"Unlike", response.content)
             self.assertNotIn(b"Like", response.content)
+            self.assertIn(b"Unlike", response.content)
 
     def test_list_like(self):
         """
-        Ensure rendered list contains expected "like" text.
+        Ensure list content object(s) are liked.
         """
         with self.login(self.user):
             # List a not-liked collection.
@@ -128,10 +128,11 @@ class TestLikes(TestCase):
                 receiver_content_type=self.content_type,
                 receiver_object_id=self.spotting.pk
             )
-            # Make sure the Like/Unlike value has toggled to "Unlike"
+            # Make sure the single list object is liked
             response = self.get("cloudspotting_list")
             self.response_200()
-            self.assertIn(b"(liked)", response.content)
+            context_object = self.get_context("object_list")[0]
+            self.assertTrue(context_object.liked)
 
 
 class TestAnnouncements(TestCase):
