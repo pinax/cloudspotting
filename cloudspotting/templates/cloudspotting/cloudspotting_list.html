@@ -18,13 +18,17 @@
         {% for cloudspotting in liked_list %}
         <div class="col-md-4">
             <h4>{{ cloudspotting }}</h4>
+            {% with cloudspotting.image_set.image_data.images as images %}
+            {% if images %}
             <div class="media-panel">
                 <a href="{% url "cloudspotting_detail" cloudspotting.pk %}">
-                    {% with cloudspotting.image_set.image_data.primaryImage|default:cloudspotting.image_set.image_data.images.0 as image %}
+                    {% with cloudspotting.image_set.image_data.primaryImage|default:images.0 as image %}
                         <img class="{% if image.is_primary %}primary{% endif %}" style="width:100%" src="{{ image.medium_thumbnail }}" />
                     {% endwith %}
                 </a>
             </div>
+            {% endif %}
+            {% endwith %}
             {% if cloudspotting.liked %}<i class="fa fa-heart text-danger"></i>{% else %}<i class="fa fa-heart-o"></i>{% endif %}
         </div>
         {% endfor %}
