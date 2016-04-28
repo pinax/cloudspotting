@@ -3,26 +3,27 @@
 [![](http://slack.pinaxproject.com/badge.svg)](http://slack.pinaxproject.com/)
 [![](https://img.shields.io/travis/pinax/cloudspotting.svg)](https://travis-ci.org/pinax/cloudspotting)
 [![](https://img.shields.io/coveralls/pinax/cloudspotting.svg)](https://coveralls.io/r/pinax/cloudspotting)
-[![](https://img.shields.io/pypi/dm/cloudspotting.svg)](https://pypi.python.org/pypi/cloudspotting/)
-[![](https://img.shields.io/pypi/v/cloudspotting.svg)](https://pypi.python.org/pypi/cloudspotting/)
 [![](https://img.shields.io/badge/license-MIT-blue.svg)](https://pypi.python.org/pypi/cloudspotting/)
 
 ## Pinax
 
-Pinax is an open-source platform built on the Django Web Framework. It is an ecosystem of reusable Django apps, themes, and starter project templates.
+[Pinax](http://pinaxproject.com/pinax/) is an open-source platform built on the
+Django Web Framework. It is an ecosystem of reusable Django apps, themes, and
+starter project templates.
 
-This collection can be found at http://pinaxproject.com.
-
-This starter project was developed as part of the Pinax ecosystem.
+This demo project was developed to illustrate the use of Pinax starter projects and Pinax apps.
 
 ## cloudspotting
 
-`cloudspotting` is a starter project which allows you to create collections of similar cloud images, view other people’s collections, “like” a collection, etc.
+`cloudspotting` allows you to create collections of similar cloud images, view other people’s collections, “like” a collection, etc.
+It demonstrates integration of `pinax-images`, `pinax-likes`, `pinax-testimonials`, and `pinax-announcements` with a real Django application.
 
 ## Getting Started
 
 Make sure you are using a virtual environment of some sort (e.g. `virtualenv` or
 `pyenv`).
+
+Clone the repository, then:
 
 ```
 pip install -r requirements.txt
@@ -33,7 +34,7 @@ pip install -r requirements.txt
 
 ## Documentation
 
-The `cloudspotting` documentation is currently under construction. 
+The `cloudspotting` documentation is currently under construction.
 
 ## Contribute
 
@@ -41,7 +42,7 @@ See [this blog post](http://blog.pinaxproject.com/2016/02/26/recap-february-pina
 
 In case of any questions we recommend you [join our Pinax Slack team](http://slack.pinaxproject.com) and ping us there instead of creating an issue on GitHub. Creating issues on GitHub is of course also valid but we are usually able to help you faster if you ping us in Slack.
 
-We also highly recommend reading our [Open Source and Self-Care blog post](http://blog.pinaxproject.com/2016/01/19/open-source-and-self-care/).  
+We also highly recommend reading our [Open Source and Self-Care blog post](http://blog.pinaxproject.com/2016/01/19/open-source-and-self-care/).
 
 ## Code of Conduct
 
