@@ -23,7 +23,7 @@ It demonstrates integration of `pinax-images`, `pinax-likes`, `pinax-testimonial
 Make sure you are using a virtual environment of some sort (e.g. `virtualenv` or
 `pyenv`).
 
-Clone the repository, then:
+Clone this repository, then:
 
 ```
 pip install -r requirements.txt
