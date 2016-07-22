@@ -4,7 +4,7 @@
 
 {% block body %}
 
-	<h2>{{ thread.subject }}</h2>
+    <h2>{{ thread.subject }}</h2>
 
     <section>
         {% for message in thread.messages.all %}
@@ -23,6 +23,6 @@
             {{ form|bootstrap }}
             <button class="btn btn-primary pull-right">Send</button>
         </form>
-    	<a class="btn btn-default" href="{% url "pinax_messages:inbox" %}">Cancel</a>
+        <a class="btn btn-default" href="{% url "pinax_messages:inbox" %}">Cancel</a>
     </section>
 {% endblock %}
