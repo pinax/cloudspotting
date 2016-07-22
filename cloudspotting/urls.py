@@ -14,6 +14,7 @@ urlpatterns = [
     url(r"^ajax/images/", include("pinax.images.urls", namespace="pinax_images")),
     url(r"^likes/", include("pinax.likes.urls", namespace="pinax_likes")),
     url(r"^announcements/", include("pinax.announcements.urls", namespace="pinax_announcements")),
+    url(r"^messages/", include("pinax.messages.urls", namespace="pinax_messages")),
 
     url(r"^cloudspotting/$",
         views.CloudSpottingListView.as_view(),

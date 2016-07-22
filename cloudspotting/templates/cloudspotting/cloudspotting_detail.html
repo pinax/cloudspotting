@@ -25,5 +25,13 @@
         <div>
         {% likes_widget request.user cloudspotting %}
         </div>
+
+        {% if user != object.user %}
+            <div class="row">
+                <div class="col-sm-12">
+                    <a href="{% url "pinax_messages:message_user_create" user_id=object.user.id %}" class="btn btn-default">Message this user</a>
+                </div>
+            </div>
+        {% endif %}
     {% endwith %}
 {% endblock %}

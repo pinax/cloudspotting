@@ -137,6 +137,7 @@ INSTALLED_APPS = [
     "pinax.likes",
     "pinax.testimonials",
     "pinax.webanalytics",
+    "pinax.messages",
 
     # project
     "cloudspotting",
