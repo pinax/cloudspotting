@@ -8,6 +8,9 @@
             <i class="fa fa-user"></i> {% user_display request.user %}
         </p>
         <li>
+            <a href="{% url 'pinax_messages:inbox' %}"><i class="fa fa-envelope"></i> {% trans "Mail" %}</a>
+        </li>
+        <li>
             <a href="{% url 'account_settings' %}"><i class="fa fa-cog"></i> {% trans "Settings" %}</a>
         </li>
         <li>
