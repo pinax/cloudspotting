@@ -6,3 +6,5 @@ dev.db
 site_media/
 .coverage
 .eggs/
+.python-version
+
