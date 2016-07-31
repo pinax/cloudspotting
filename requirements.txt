@@ -5,9 +5,9 @@ pinax-announcements==2.0.4
 pinax-eventlog==1.1.2
 pinax-images==2.0.0
 pinax-likes==2.0.4
-pinax-messages==1.0.0
+pinax-messages==1.0.1
 pinax-testimonials==1.0.5
-pinax-theme-bootstrap==7.10.0
+pinax-theme-bootstrap==7.10.1
 pinax-webanalytics==2.0.4
 
 django-test-plus
