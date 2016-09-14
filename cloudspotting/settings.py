@@ -109,6 +109,7 @@ MIDDLEWARE_CLASSES = [
     "django.contrib.auth.middleware.SessionAuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "account.middleware.ExpiredPasswordMiddleware",
 ]
 
 ROOT_URLCONF = "cloudspotting.urls"
@@ -195,3 +196,6 @@ AUTHENTICATION_BACKENDS = [
 PINAX_LIKES_LIKABLE_MODELS = {
     "cloudspotting.CloudSpotting": {},
 }
+
+ACCOUNT_PASSWORD_USE_HISTORY = True
+ACCOUNT_PASSWORD_EXPIRY = 60*60*24
