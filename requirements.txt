@@ -1,13 +1,14 @@
-Django==1.9.8
-django-appconf==1.0.1
-django-user-accounts==1.3.1
-pinax-announcements==2.0.4
-pinax-eventlog==1.1.2
+django==2.0.1
+django-appconf==1.0.2
+django-user-accounts==2.0.3
+pinax-announcements==3.0.0
+pinax-eventlog==2.0.2
+-e git+http://github.com/pinax/pinax-images.git@599f7220aa857d45bff28ec5238bdc72044d08c1#egg=pinax_images
 pinax-images==2.0.0
-pinax-likes==2.0.4
-pinax-messages==1.0.1
-pinax-testimonials==1.0.5
-pinax-theme-bootstrap==7.10.1
-pinax-webanalytics==2.0.4
+pinax-likes==3.0.0
+pinax-messages==2.0.1
+pinax-testimonials==2.0.3
+pinax-templates==1.0.0
+pinax-webanalytics==4.0.1
 
-django-test-plus>=1.0.14
+django-test-plus>=1.0.22

@@ -8,7 +8,7 @@ from . import views
 
 urlpatterns = [
     url(r"^$", views.Home.as_view(), name="home"),
-    url(r"^admin/", include(admin.site.urls)),
+    url(r"^admin/", admin.site.urls),
     url(r"^account/", include("account.urls")),
     url(r"^ajax/images/", include("pinax.images.urls", namespace="pinax_images")),
     url(r"^likes/", include("pinax.likes.urls", namespace="pinax_likes")),

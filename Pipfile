@@ -1,0 +1,25 @@
+[[source]]
+
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+
+[packages]
+
+django = "==2.0.1"
+django-appconf = "==1.0.2"
+django-user-accounts = "==2.0.3"
+pinax-announcements = "==3.0.0"
+pinax-eventlog = "==2.0.2"
+pinax-likes = "==3.0.0"
+pinax-messages = "==2.0.1"
+pinax-testimonials = "==2.0.3"
+pinax-webanalytics = "==4.0.1"
+pinax-templates = "==1.0.0"
+pinax-images = {path = "git+http://github.com/pinax/pinax-images.git@599f7220aa857d45bff28ec5238bdc72044d08c1#egg=pinax-images", editable = true}
+
+
+[dev-packages]
+
+django-test-plus = "*"

@@ -95,7 +95,6 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.messages.context_processors.messages",
                 "account.context_processors.account",
-                "pinax_theme_bootstrap.context_processors.theme",
             ],
         },
     },
@@ -127,7 +126,7 @@ INSTALLED_APPS = [
 
     # theme
     "bootstrapform",
-    "pinax_theme_bootstrap",
+    "pinax.templates",
 
     # external
     "account",
