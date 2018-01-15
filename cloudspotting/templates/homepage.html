@@ -2,31 +2,57 @@
 
 {% load i18n %}
 
-{% block head_title %}CloudSpotting{% endblock %}
+{% block head_title %}pinax-project-account{% endblock %}
 
 {% block body_class %}home{% endblock %}
 
 {% block body_base %}
+<main>
     <section class="jumbotron">
         <div class="container">
             {% include "_messages.html" %}
-            <h1>{% blocktrans %}Welcome to<br>CloudSpotting{% endblocktrans %}</h1>
-            <p>
+            <h1>{% blocktrans %}Welcome to<div style="font-size: 6rem; font-weight: 600;">CloudSpotting</div>{% endblocktrans %}</h1>
+            <p class="lead">
                 {% blocktrans %}
-                CloudSpotting is a demo project built using the Pinax starter project
-                <a href="https://github.com/pinax/pinax-starter-projects/tree/documents">"documents"</a>.
+                CloudSpotting is a demo project built using the
+                <a href="https://github.com/pinax/pinax-starter-projects/tree/documents">Pinax Project Account</a>.
                 This project demonstrates the use of pinax-images in a working application.
                 {% endblocktrans %}
             </p>
             {% if not user.is_authenticated %}
             {% url "account_login" as login_url %}
             {% url "account_signup" as signup_url %}
-            <p>{% blocktrans %}You can <a href="{{ login_url }}" class="btn btn-default">Log In</a> or <a href="{{ signup_url }}" class="btn btn-primary">Sign Up</a> to try out the site.{% endblocktrans %}</p>
+            <p class="mb-5 lead">{% blocktrans %}You can <a href="{{ login_url }}" class="btn btn-secondary">Log In</a> or <a href="{{ signup_url }}" class="btn btn-primary">Sign Up</a> to try out the site.{% endblocktrans %}</p>
             {% endif %}
+            <h4>Pinax Project Account</h4>
+            <img src="http://pinaxproject.com/pinax-design/tessellations/Project%20Account.png" />
+            <h3>Plus</h3>
+            <div class="additionals" style="display: flex; justify-content: space-around; text-align: center;">
+                <a href="https://github.com/pinax/pinax-announcements">
+                    <img src="http://pinaxproject.com/pinax-design/patches/pinax-announcements.svg" />
+                    <h4 class="mt-2">pinax-announcements</h4>
+                </a>
+                <a href="https://github.com/pinax/pinax-images">
+                    <img src="http://pinaxproject.com/pinax-design/patches/pinax-images.svg" />
+                    <h4 class="mt-2">pinax-images</h4>
+                </a>
+                <a href="https://github.com/pinax/pinax-likes">
+                    <img src="http://pinaxproject.com/pinax-design/patches/pinax-likes.svg" />
+                    <h4 class="mt-2">pinax-likes</h4>
+                </a>
+                <a href="https://github.com/pinax/pinax-messages">
+                    <img src="http://pinaxproject.com/pinax-design/patches/pinax-messages.svg" />
+                    <h4 class="mt-2">pinax-messages</h4>
+                </a>
+                <a href="https://github.com/pinax/pinax-testimonials">
+                    <img src="http://pinaxproject.com/pinax-design/patches/pinax-testimonials.svg" />
+                    <h4 class="mt-2">pinax-testimonials</h4>
+                </a>
+            </div>
         </div>
     </section>
-    <section>
-        <div class="container">
+    <section id="content-section">
+        <div id="content-body">
             <h2 class="text-center">{% blocktrans %}What is Pinax?{% endblocktrans %}</h2>
             <p class="lead">
                 {% blocktrans %}
@@ -36,36 +62,43 @@
                 focus on what makes your site different.
                 {% endblocktrans %}
             </p>
-            <div class="feature-columns">
-                <div>
-                    <i class="fa fa-cubes fa-3x"></i><br>
-                    {% blocktrans %}
-                    <b>Starter projects</b> provide project layout,
-                    scaffolding, already integrated components and
-                    ready-to-go code.
-                    {% endblocktrans %}
+
+            <div class="feature-columns row">
+                <div class="col">
+                    <div class="icon"><i class="fa fa-cubes fa-3x"></i></div>
+                    <div class="desc">
+                        {% blocktrans %}
+                        <b>Starter projects</b> provide project layout,
+                        scaffolding, already integrated components and
+                        ready-to-go code.
+                        {% endblocktrans %}
+                    </div>
                 </div>
-                <div>
-                    <i class="fa fa-puzzle-piece fa-3x"></i><br>
-                    {% blocktrans %}
-                    <b>Reusable apps</b> provide common
-                    infrastructure, back-end functionality,
-                    and user-facing components.
-                    {% endblocktrans %}
+                <div class="col">
+                    <div class="icon"><i class="fa fa-puzzle-piece fa-3x"></i></div>
+                    <div class="desc">
+                        {% blocktrans %}
+                        <b>Reusable apps</b> provide common
+                        infrastructure, back-end functionality,
+                        and user-facing components.
+                        {% endblocktrans %}
+                    </div>
                 </div>
-                <div>
-                    <i class="fa fa-tint fa-3x"></i><br>
-                    {% blocktrans %}
-                    <b>Themes</b> provide default templates and
-                    stylesheets for quick prototyping and easy customization.
-                    {% endblocktrans %}
+                <div class="col">
+                    <div class="icon"><i class="fa fa-tint fa-3x"></i></div>
+                    <div class="desc">
+                        {% blocktrans %}
+                        <b>Themes</b> provide default templates and
+                        stylesheets for quick prototyping and easy customization.
+                        {% endblocktrans %}
+                    </div>
                 </div>
             </div>
         </div>
     </section>
     <section>
         <div class="container">
-            <p class="lead text-center">
+            <p class="see-more lead text-center">
                 {% blocktrans %}
                 See <a href="http://pinaxproject.com/">pinaxproject.com</a>
                 for more information.
@@ -73,4 +106,5 @@
             </p>
         </div>
     </section>
+</main>
 {% endblock %}

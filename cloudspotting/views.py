@@ -1,5 +1,5 @@
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.urlresolvers import reverse, reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.http import HttpResponseRedirect
 from django.views.generic import (
     CreateView,
@@ -19,7 +19,7 @@ class Home(TemplateView):
     template_name = "homepage.html"
 
     def get(self, request, *args, **kwargs):
-        if request.user.is_authenticated():
+        if request.user.is_authenticated:
             return HttpResponseRedirect(reverse("cloudspotting_list"))
         return super(Home, self).get(request, *args, **kwargs)
 
