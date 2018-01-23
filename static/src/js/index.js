@@ -11,7 +11,8 @@ import handleMessageDismiss from './messages';
 
 const React = require('react');
 const ReactDOM = require('react-dom');
-const ImagePanel = require('pinax-images-panel');
+// const ImagePanel = require('pinax-images-panel');
+import ImagePanel from './pinax-images-panel';
 
 $(() => {
     $(document).ajaxSend(ajaxSendMethod);

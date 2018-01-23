@@ -1,157 +1,357 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 module.exports = require('./lib/axios');
 },{"./lib/axios":3}],2:[function(require,module,exports){
+(function (process){
 'use strict';
 
 var utils = require('./../utils');
+var settle = require('./../core/settle');
 var buildURL = require('./../helpers/buildURL');
 var parseHeaders = require('./../helpers/parseHeaders');
-var transformData = require('./../helpers/transformData');
 var isURLSameOrigin = require('./../helpers/isURLSameOrigin');
-var btoa = window.btoa || require('./../helpers/btoa');
+var createError = require('../core/createError');
+var btoa = (typeof window !== 'undefined' && window.btoa && window.btoa.bind(window)) || require('./../helpers/btoa');
 
-module.exports = function xhrAdapter(resolve, reject, config) {
-  var requestData = config.data;
-  var requestHeaders = config.headers;
+module.exports = function xhrAdapter(config) {
+  return new Promise(function dispatchXhrRequest(resolve, reject) {
+    var requestData = config.data;
+    var requestHeaders = config.headers;
 
-  if (utils.isFormData(requestData)) {
-    delete requestHeaders['Content-Type']; // Let the browser set it
-  }
-
-  var request = new XMLHttpRequest();
-
-  // For IE 8/9 CORS support
-  // Only supports POST and GET calls and doesn't returns the response headers.
-  if (window.XDomainRequest && !('withCredentials' in request) && !isURLSameOrigin(config.url)) {
-    request = new window.XDomainRequest();
-  }
-
-  // HTTP basic authentication
-  if (config.auth) {
-    var username = config.auth.username || '';
-    var password = config.auth.password || '';
-    requestHeaders.Authorization = 'Basic ' + btoa(username + ':' + password);
-  }
-
-  request.open(config.method.toUpperCase(), buildURL(config.url, config.params, config.paramsSerializer), true);
-
-  // Set the request timeout in MS
-  request.timeout = config.timeout;
-
-  // Listen for ready state
-  request.onload = function handleLoad() {
-    if (!request) {
-      return;
+    if (utils.isFormData(requestData)) {
+      delete requestHeaders['Content-Type']; // Let the browser set it
     }
-    // Prepare the response
-    var responseHeaders = 'getAllResponseHeaders' in request ? parseHeaders(request.getAllResponseHeaders()) : null;
-    var responseData = ['text', ''].indexOf(config.responseType || '') !== -1 ? request.responseText : request.response;
-    var response = {
-      data: transformData(
-        responseData,
-        responseHeaders,
-        config.transformResponse
-      ),
-      // IE sends 1223 instead of 204 (https://github.com/mzabriskie/axios/issues/201)
-      status: request.status === 1223 ? 204 : request.status,
-      statusText: request.status === 1223 ? 'No Content' : request.statusText,
-      headers: responseHeaders,
-      config: config
+
+    var request = new XMLHttpRequest();
+    var loadEvent = 'onreadystatechange';
+    var xDomain = false;
+
+    // For IE 8/9 CORS support
+    // Only supports POST and GET calls and doesn't returns the response headers.
+    // DON'T do this for testing b/c XMLHttpRequest is mocked, not XDomainRequest.
+    if (process.env.NODE_ENV !== 'test' &&
+        typeof window !== 'undefined' &&
+        window.XDomainRequest && !('withCredentials' in request) &&
+        !isURLSameOrigin(config.url)) {
+      request = new window.XDomainRequest();
+      loadEvent = 'onload';
+      xDomain = true;
+      request.onprogress = function handleProgress() {};
+      request.ontimeout = function handleTimeout() {};
+    }
+
+    // HTTP basic authentication
+    if (config.auth) {
+      var username = config.auth.username || '';
+      var password = config.auth.password || '';
+      requestHeaders.Authorization = 'Basic ' + btoa(username + ':' + password);
+    }
+
+    request.open(config.method.toUpperCase(), buildURL(config.url, config.params, config.paramsSerializer), true);
+
+    // Set the request timeout in MS
+    request.timeout = config.timeout;
+
+    // Listen for ready state
+    request[loadEvent] = function handleLoad() {
+      if (!request || (request.readyState !== 4 && !xDomain)) {
+        return;
+      }
+
+      // The request errored out and we didn't get a response, this will be
+      // handled by onerror instead
+      // With one exception: request that using file: protocol, most browsers
+      // will return status as 0 even though it's a successful request
+      if (request.status === 0 && !(request.responseURL && request.responseURL.indexOf('file:') === 0)) {
+        return;
+      }
+
+      // Prepare the response
+      var responseHeaders = 'getAllResponseHeaders' in request ? parseHeaders(request.getAllResponseHeaders()) : null;
+      var responseData = !config.responseType || config.responseType === 'text' ? request.responseText : request.response;
+      var response = {
+        data: responseData,
+        // IE sends 1223 instead of 204 (https://github.com/axios/axios/issues/201)
+        status: request.status === 1223 ? 204 : request.status,
+        statusText: request.status === 1223 ? 'No Content' : request.statusText,
+        headers: responseHeaders,
+        config: config,
+        request: request
+      };
+
+      settle(resolve, reject, response);
+
+      // Clean up request
+      request = null;
     };
 
-    // Resolve or reject the Promise based on the status
-    ((response.status >= 200 && response.status < 300) ||
-     (!('status' in request) && response.responseText) ?
-      resolve :
-      reject)(response);
+    // Handle low level network errors
+    request.onerror = function handleError() {
+      // Real errors are hidden from us by the browser
+      // onerror should only fire if it's a network error
+      reject(createError('Network Error', config, null, request));
 
-    // Clean up request
-    request = null;
-  };
+      // Clean up request
+      request = null;
+    };
 
-  // Handle low level network errors
-  request.onerror = function handleError() {
-    // Real errors are hidden from us by the browser
-    // onerror should only fire if it's a network error
-    reject(new Error('Network Error'));
+    // Handle timeout
+    request.ontimeout = function handleTimeout() {
+      reject(createError('timeout of ' + config.timeout + 'ms exceeded', config, 'ECONNABORTED',
+        request));
 
-    // Clean up request
-    request = null;
-  };
-
-  // Add xsrf header
-  // This is only done if running in a standard browser environment.
-  // Specifically not if we're in a web worker, or react-native.
-  if (utils.isStandardBrowserEnv()) {
-    var cookies = require('./../helpers/cookies');
+      // Clean up request
+      request = null;
+    };
 
     // Add xsrf header
-    var xsrfValue = config.withCredentials || isURLSameOrigin(config.url) ?
-        cookies.read(config.xsrfCookieName) :
-        undefined;
+    // This is only done if running in a standard browser environment.
+    // Specifically not if we're in a web worker, or react-native.
+    if (utils.isStandardBrowserEnv()) {
+      var cookies = require('./../helpers/cookies');
 
-    if (xsrfValue) {
-      requestHeaders[config.xsrfHeaderName] = xsrfValue;
-    }
-  }
+      // Add xsrf header
+      var xsrfValue = (config.withCredentials || isURLSameOrigin(config.url)) && config.xsrfCookieName ?
+          cookies.read(config.xsrfCookieName) :
+          undefined;
 
-  // Add headers to the request
-  if ('setRequestHeader' in request) {
-    utils.forEach(requestHeaders, function setRequestHeader(val, key) {
-      if (typeof requestData === 'undefined' && key.toLowerCase() === 'content-type') {
-        // Remove Content-Type if data is undefined
-        delete requestHeaders[key];
-      } else {
-        // Otherwise add header to the request
-        request.setRequestHeader(key, val);
-      }
-    });
-  }
-
-  // Add withCredentials to request if needed
-  if (config.withCredentials) {
-    request.withCredentials = true;
-  }
-
-  // Add responseType to request if needed
-  if (config.responseType) {
-    try {
-      request.responseType = config.responseType;
-    } catch (e) {
-      if (request.responseType !== 'json') {
-        throw e;
+      if (xsrfValue) {
+        requestHeaders[config.xsrfHeaderName] = xsrfValue;
       }
     }
-  }
 
-  if (utils.isArrayBuffer(requestData)) {
-    requestData = new DataView(requestData);
-  }
+    // Add headers to the request
+    if ('setRequestHeader' in request) {
+      utils.forEach(requestHeaders, function setRequestHeader(val, key) {
+        if (typeof requestData === 'undefined' && key.toLowerCase() === 'content-type') {
+          // Remove Content-Type if data is undefined
+          delete requestHeaders[key];
+        } else {
+          // Otherwise add header to the request
+          request.setRequestHeader(key, val);
+        }
+      });
+    }
 
-  // Send the request
-  request.send(requestData);
+    // Add withCredentials to request if needed
+    if (config.withCredentials) {
+      request.withCredentials = true;
+    }
+
+    // Add responseType to request if needed
+    if (config.responseType) {
+      try {
+        request.responseType = config.responseType;
+      } catch (e) {
+        // Expected DOMException thrown by browsers not compatible XMLHttpRequest Level 2.
+        // But, this can be suppressed for 'json' type as it can be parsed by default 'transformResponse' function.
+        if (config.responseType !== 'json') {
+          throw e;
+        }
+      }
+    }
+
+    // Handle progress if needed
+    if (typeof config.onDownloadProgress === 'function') {
+      request.addEventListener('progress', config.onDownloadProgress);
+    }
+
+    // Not all browsers support upload events
+    if (typeof config.onUploadProgress === 'function' && request.upload) {
+      request.upload.addEventListener('progress', config.onUploadProgress);
+    }
+
+    if (config.cancelToken) {
+      // Handle cancellation
+      config.cancelToken.promise.then(function onCanceled(cancel) {
+        if (!request) {
+          return;
+        }
+
+        request.abort();
+        reject(cancel);
+        // Clean up request
+        request = null;
+      });
+    }
+
+    if (requestData === undefined) {
+      requestData = null;
+    }
+
+    // Send the request
+    request.send(requestData);
+  });
 };
 
-},{"./../helpers/btoa":8,"./../helpers/buildURL":9,"./../helpers/cookies":11,"./../helpers/isURLSameOrigin":13,"./../helpers/parseHeaders":14,"./../helpers/transformData":16,"./../utils":17}],3:[function(require,module,exports){
+}).call(this,require('_process'))
+
+},{"../core/createError":9,"./../core/settle":12,"./../helpers/btoa":16,"./../helpers/buildURL":17,"./../helpers/cookies":19,"./../helpers/isURLSameOrigin":21,"./../helpers/parseHeaders":23,"./../utils":25,"_process":48}],3:[function(require,module,exports){
 'use strict';
 
-var defaults = require('./defaults');
 var utils = require('./utils');
-var dispatchRequest = require('./core/dispatchRequest');
-var InterceptorManager = require('./core/InterceptorManager');
-var isAbsoluteURL = require('./helpers/isAbsoluteURL');
-var combineURLs = require('./helpers/combineURLs');
 var bind = require('./helpers/bind');
-var transformData = require('./helpers/transformData');
+var Axios = require('./core/Axios');
+var defaults = require('./defaults');
 
-function Axios(defaultConfig) {
-  this.defaults = utils.merge({}, defaultConfig);
+/**
+ * Create an instance of Axios
+ *
+ * @param {Object} defaultConfig The default config for the instance
+ * @return {Axios} A new instance of Axios
+ */
+function createInstance(defaultConfig) {
+  var context = new Axios(defaultConfig);
+  var instance = bind(Axios.prototype.request, context);
+
+  // Copy axios.prototype to instance
+  utils.extend(instance, Axios.prototype, context);
+
+  // Copy context to instance
+  utils.extend(instance, context);
+
+  return instance;
+}
+
+// Create the default instance to be exported
+var axios = createInstance(defaults);
+
+// Expose Axios class to allow class inheritance
+axios.Axios = Axios;
+
+// Factory for creating new instances
+axios.create = function create(instanceConfig) {
+  return createInstance(utils.merge(defaults, instanceConfig));
+};
+
+// Expose Cancel & CancelToken
+axios.Cancel = require('./cancel/Cancel');
+axios.CancelToken = require('./cancel/CancelToken');
+axios.isCancel = require('./cancel/isCancel');
+
+// Expose all/spread
+axios.all = function all(promises) {
+  return Promise.all(promises);
+};
+axios.spread = require('./helpers/spread');
+
+module.exports = axios;
+
+// Allow use of default import syntax in TypeScript
+module.exports.default = axios;
+
+},{"./cancel/Cancel":4,"./cancel/CancelToken":5,"./cancel/isCancel":6,"./core/Axios":7,"./defaults":14,"./helpers/bind":15,"./helpers/spread":24,"./utils":25}],4:[function(require,module,exports){
+'use strict';
+
+/**
+ * A `Cancel` is an object that is thrown when an operation is canceled.
+ *
+ * @class
+ * @param {string=} message The message.
+ */
+function Cancel(message) {
+  this.message = message;
+}
+
+Cancel.prototype.toString = function toString() {
+  return 'Cancel' + (this.message ? ': ' + this.message : '');
+};
+
+Cancel.prototype.__CANCEL__ = true;
+
+module.exports = Cancel;
+
+},{}],5:[function(require,module,exports){
+'use strict';
+
+var Cancel = require('./Cancel');
+
+/**
+ * A `CancelToken` is an object that can be used to request cancellation of an operation.
+ *
+ * @class
+ * @param {Function} executor The executor function.
+ */
+function CancelToken(executor) {
+  if (typeof executor !== 'function') {
+    throw new TypeError('executor must be a function.');
+  }
+
+  var resolvePromise;
+  this.promise = new Promise(function promiseExecutor(resolve) {
+    resolvePromise = resolve;
+  });
+
+  var token = this;
+  executor(function cancel(message) {
+    if (token.reason) {
+      // Cancellation has already been requested
+      return;
+    }
+
+    token.reason = new Cancel(message);
+    resolvePromise(token.reason);
+  });
+}
+
+/**
+ * Throws a `Cancel` if cancellation has been requested.
+ */
+CancelToken.prototype.throwIfRequested = function throwIfRequested() {
+  if (this.reason) {
+    throw this.reason;
+  }
+};
+
+/**
+ * Returns an object that contains a new `CancelToken` and a function that, when called,
+ * cancels the `CancelToken`.
+ */
+CancelToken.source = function source() {
+  var cancel;
+  var token = new CancelToken(function executor(c) {
+    cancel = c;
+  });
+  return {
+    token: token,
+    cancel: cancel
+  };
+};
+
+module.exports = CancelToken;
+
+},{"./Cancel":4}],6:[function(require,module,exports){
+'use strict';
+
+module.exports = function isCancel(value) {
+  return !!(value && value.__CANCEL__);
+};
+
+},{}],7:[function(require,module,exports){
+'use strict';
+
+var defaults = require('./../defaults');
+var utils = require('./../utils');
+var InterceptorManager = require('./InterceptorManager');
+var dispatchRequest = require('./dispatchRequest');
+
+/**
+ * Create a new instance of Axios
+ *
+ * @param {Object} instanceConfig The default config for the instance
+ */
+function Axios(instanceConfig) {
+  this.defaults = instanceConfig;
   this.interceptors = {
     request: new InterceptorManager(),
     response: new InterceptorManager()
   };
 }
 
+/**
+ * Dispatch a request
+ *
+ * @param {Object} config The config specific for this request (merged with this.defaults)
+ */
 Axios.prototype.request = function request(config) {
   /*eslint no-param-reassign:0*/
   // Allow for axios('example/url'[, config]) a la fetch API
@@ -162,35 +362,7 @@ Axios.prototype.request = function request(config) {
   }
 
   config = utils.merge(defaults, this.defaults, { method: 'get' }, config);
-
-  // Support baseURL config
-  if (config.baseURL && !isAbsoluteURL(config.url)) {
-    config.url = combineURLs(config.baseURL, config.url);
-  }
-
-  // Don't allow overriding defaults.withCredentials
-  config.withCredentials = config.withCredentials || this.defaults.withCredentials;
-
-  // Transform request data
-  config.data = transformData(
-    config.data,
-    config.headers,
-    config.transformRequest
-  );
-
-  // Flatten headers
-  config.headers = utils.merge(
-    config.headers.common || {},
-    config.headers[config.method] || {},
-    config.headers || {}
-  );
-
-  utils.forEach(
-    ['delete', 'get', 'head', 'post', 'put', 'patch', 'common'],
-    function cleanHeaderConfig(method) {
-      delete config.headers[method];
-    }
-  );
+  config.method = config.method.toLowerCase();
 
   // Hook up interceptors middleware
   var chain = [dispatchRequest, undefined];
@@ -211,27 +383,8 @@ Axios.prototype.request = function request(config) {
   return promise;
 };
 
-var defaultInstance = new Axios(defaults);
-var axios = module.exports = bind(Axios.prototype.request, defaultInstance);
-
-axios.create = function create(defaultConfig) {
-  return new Axios(defaultConfig);
-};
-
-// Expose defaults
-axios.defaults = defaultInstance.defaults;
-
-// Expose all/spread
-axios.all = function all(promises) {
-  return Promise.all(promises);
-};
-axios.spread = require('./helpers/spread');
-
-// Expose interceptors
-axios.interceptors = defaultInstance.interceptors;
-
 // Provide aliases for supported request methods
-utils.forEach(['delete', 'get', 'head'], function forEachMethodNoData(method) {
+utils.forEach(['delete', 'get', 'head', 'options'], function forEachMethodNoData(method) {
   /*eslint func-names:0*/
   Axios.prototype[method] = function(url, config) {
     return this.request(utils.merge(config || {}, {
@@ -239,7 +392,6 @@ utils.forEach(['delete', 'get', 'head'], function forEachMethodNoData(method) {
       url: url
     }));
   };
-  axios[method] = bind(Axios.prototype[method], defaultInstance);
 });
 
 utils.forEach(['post', 'put', 'patch'], function forEachMethodWithData(method) {
@@ -251,10 +403,11 @@ utils.forEach(['post', 'put', 'patch'], function forEachMethodWithData(method) {
       data: data
     }));
   };
-  axios[method] = bind(Axios.prototype[method], defaultInstance);
 });
 
-},{"./core/InterceptorManager":4,"./core/dispatchRequest":5,"./defaults":6,"./helpers/bind":7,"./helpers/combineURLs":10,"./helpers/isAbsoluteURL":12,"./helpers/spread":15,"./helpers/transformData":16,"./utils":17}],4:[function(require,module,exports){
+module.exports = Axios;
+
+},{"./../defaults":14,"./../utils":25,"./InterceptorManager":8,"./dispatchRequest":10}],8:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -308,88 +461,247 @@ InterceptorManager.prototype.forEach = function forEach(fn) {
 
 module.exports = InterceptorManager;
 
-},{"./../utils":17}],5:[function(require,module,exports){
-(function (process){
+},{"./../utils":25}],9:[function(require,module,exports){
 'use strict';
 
+var enhanceError = require('./enhanceError');
+
 /**
- * Dispatch a request to the server using whichever adapter
- * is supported by the current environment.
+ * Create an Error with the specified message, config, error code, request and response.
+ *
+ * @param {string} message The error message.
+ * @param {Object} config The config.
+ * @param {string} [code] The error code (for example, 'ECONNABORTED').
+ * @param {Object} [request] The request.
+ * @param {Object} [response] The response.
+ * @returns {Error} The created error.
+ */
+module.exports = function createError(message, config, code, request, response) {
+  var error = new Error(message);
+  return enhanceError(error, config, code, request, response);
+};
+
+},{"./enhanceError":11}],10:[function(require,module,exports){
+'use strict';
+
+var utils = require('./../utils');
+var transformData = require('./transformData');
+var isCancel = require('../cancel/isCancel');
+var defaults = require('../defaults');
+var isAbsoluteURL = require('./../helpers/isAbsoluteURL');
+var combineURLs = require('./../helpers/combineURLs');
+
+/**
+ * Throws a `Cancel` if cancellation has been requested.
+ */
+function throwIfCancellationRequested(config) {
+  if (config.cancelToken) {
+    config.cancelToken.throwIfRequested();
+  }
+}
+
+/**
+ * Dispatch a request to the server using the configured adapter.
  *
  * @param {object} config The config that is to be used for the request
  * @returns {Promise} The Promise to be fulfilled
  */
 module.exports = function dispatchRequest(config) {
-  return new Promise(function executor(resolve, reject) {
-    try {
-      var adapter;
+  throwIfCancellationRequested(config);
 
-      if (typeof config.adapter === 'function') {
-        // For custom adapter support
-        adapter = config.adapter;
-      } else if (typeof XMLHttpRequest !== 'undefined') {
-        // For browsers use XHR adapter
-        adapter = require('../adapters/xhr');
-      } else if (typeof process !== 'undefined') {
-        // For node use HTTP adapter
-        adapter = require('../adapters/http');
-      }
+  // Support baseURL config
+  if (config.baseURL && !isAbsoluteURL(config.url)) {
+    config.url = combineURLs(config.baseURL, config.url);
+  }
 
-      if (typeof adapter === 'function') {
-        adapter(resolve, reject, config);
-      }
-    } catch (e) {
-      reject(e);
+  // Ensure headers exist
+  config.headers = config.headers || {};
+
+  // Transform request data
+  config.data = transformData(
+    config.data,
+    config.headers,
+    config.transformRequest
+  );
+
+  // Flatten headers
+  config.headers = utils.merge(
+    config.headers.common || {},
+    config.headers[config.method] || {},
+    config.headers || {}
+  );
+
+  utils.forEach(
+    ['delete', 'get', 'head', 'post', 'put', 'patch', 'common'],
+    function cleanHeaderConfig(method) {
+      delete config.headers[method];
     }
+  );
+
+  var adapter = config.adapter || defaults.adapter;
+
+  return adapter(config).then(function onAdapterResolution(response) {
+    throwIfCancellationRequested(config);
+
+    // Transform response data
+    response.data = transformData(
+      response.data,
+      response.headers,
+      config.transformResponse
+    );
+
+    return response;
+  }, function onAdapterRejection(reason) {
+    if (!isCancel(reason)) {
+      throwIfCancellationRequested(config);
+
+      // Transform response data
+      if (reason && reason.response) {
+        reason.response.data = transformData(
+          reason.response.data,
+          reason.response.headers,
+          config.transformResponse
+        );
+      }
+    }
+
+    return Promise.reject(reason);
   });
 };
 
+},{"../cancel/isCancel":6,"../defaults":14,"./../helpers/combineURLs":18,"./../helpers/isAbsoluteURL":20,"./../utils":25,"./transformData":13}],11:[function(require,module,exports){
+'use strict';
 
-}).call(this,require('_process'))
+/**
+ * Update an Error with the specified config, error code, and response.
+ *
+ * @param {Error} error The error to update.
+ * @param {Object} config The config.
+ * @param {string} [code] The error code (for example, 'ECONNABORTED').
+ * @param {Object} [request] The request.
+ * @param {Object} [response] The response.
+ * @returns {Error} The error.
+ */
+module.exports = function enhanceError(error, config, code, request, response) {
+  error.config = config;
+  if (code) {
+    error.code = code;
+  }
+  error.request = request;
+  error.response = response;
+  return error;
+};
 
-},{"../adapters/http":2,"../adapters/xhr":2,"_process":47}],6:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
+'use strict';
+
+var createError = require('./createError');
+
+/**
+ * Resolve or reject a Promise based on response status.
+ *
+ * @param {Function} resolve A function that resolves the promise.
+ * @param {Function} reject A function that rejects the promise.
+ * @param {object} response The response.
+ */
+module.exports = function settle(resolve, reject, response) {
+  var validateStatus = response.config.validateStatus;
+  // Note: status is not exposed by XDomainRequest
+  if (!response.status || !validateStatus || validateStatus(response.status)) {
+    resolve(response);
+  } else {
+    reject(createError(
+      'Request failed with status code ' + response.status,
+      response.config,
+      null,
+      response.request,
+      response
+    ));
+  }
+};
+
+},{"./createError":9}],13:[function(require,module,exports){
+'use strict';
+
+var utils = require('./../utils');
+
+/**
+ * Transform the data for a request or a response
+ *
+ * @param {Object|String} data The data to be transformed
+ * @param {Array} headers The headers for the request or response
+ * @param {Array|Function} fns A single function or Array of functions
+ * @returns {*} The resulting transformed data
+ */
+module.exports = function transformData(data, headers, fns) {
+  /*eslint no-param-reassign:0*/
+  utils.forEach(fns, function transform(fn) {
+    data = fn(data, headers);
+  });
+
+  return data;
+};
+
+},{"./../utils":25}],14:[function(require,module,exports){
+(function (process){
 'use strict';
 
 var utils = require('./utils');
+var normalizeHeaderName = require('./helpers/normalizeHeaderName');
 
-var PROTECTION_PREFIX = /^\)\]\}',?\n/;
 var DEFAULT_CONTENT_TYPE = {
   'Content-Type': 'application/x-www-form-urlencoded'
 };
 
-module.exports = {
-  transformRequest: [function transformResponseJSON(data, headers) {
-    if (utils.isFormData(data)) {
-      return data;
-    }
-    if (utils.isArrayBuffer(data)) {
+function setContentTypeIfUnset(headers, value) {
+  if (!utils.isUndefined(headers) && utils.isUndefined(headers['Content-Type'])) {
+    headers['Content-Type'] = value;
+  }
+}
+
+function getDefaultAdapter() {
+  var adapter;
+  if (typeof XMLHttpRequest !== 'undefined') {
+    // For browsers use XHR adapter
+    adapter = require('./adapters/xhr');
+  } else if (typeof process !== 'undefined') {
+    // For node use HTTP adapter
+    adapter = require('./adapters/http');
+  }
+  return adapter;
+}
+
+var defaults = {
+  adapter: getDefaultAdapter(),
+
+  transformRequest: [function transformRequest(data, headers) {
+    normalizeHeaderName(headers, 'Content-Type');
+    if (utils.isFormData(data) ||
+      utils.isArrayBuffer(data) ||
+      utils.isBuffer(data) ||
+      utils.isStream(data) ||
+      utils.isFile(data) ||
+      utils.isBlob(data)
+    ) {
       return data;
     }
     if (utils.isArrayBufferView(data)) {
       return data.buffer;
     }
-    if (utils.isObject(data) && !utils.isFile(data) && !utils.isBlob(data)) {
-      // Set application/json if no Content-Type has been specified
-      if (!utils.isUndefined(headers)) {
-        utils.forEach(headers, function processContentTypeHeader(val, key) {
-          if (key.toLowerCase() === 'content-type') {
-            headers['Content-Type'] = val;
-          }
-        });
-
-        if (utils.isUndefined(headers['Content-Type'])) {
-          headers['Content-Type'] = 'application/json;charset=utf-8';
-        }
-      }
+    if (utils.isURLSearchParams(data)) {
+      setContentTypeIfUnset(headers, 'application/x-www-form-urlencoded;charset=utf-8');
+      return data.toString();
+    }
+    if (utils.isObject(data)) {
+      setContentTypeIfUnset(headers, 'application/json;charset=utf-8');
       return JSON.stringify(data);
     }
     return data;
   }],
 
-  transformResponse: [function transformResponseJSON(data) {
+  transformResponse: [function transformResponse(data) {
     /*eslint no-param-reassign:0*/
     if (typeof data === 'string') {
-      data = data.replace(PROTECTION_PREFIX, '');
       try {
         data = JSON.parse(data);
       } catch (e) { /* Ignore */ }
@@ -397,22 +709,37 @@ module.exports = {
     return data;
   }],
 
-  headers: {
-    common: {
-      'Accept': 'application/json, text/plain, */*'
-    },
-    patch: utils.merge(DEFAULT_CONTENT_TYPE),
-    post: utils.merge(DEFAULT_CONTENT_TYPE),
-    put: utils.merge(DEFAULT_CONTENT_TYPE)
-  },
-
   timeout: 0,
 
   xsrfCookieName: 'XSRF-TOKEN',
-  xsrfHeaderName: 'X-XSRF-TOKEN'
+  xsrfHeaderName: 'X-XSRF-TOKEN',
+
+  maxContentLength: -1,
+
+  validateStatus: function validateStatus(status) {
+    return status >= 200 && status < 300;
+  }
 };
 
-},{"./utils":17}],7:[function(require,module,exports){
+defaults.headers = {
+  common: {
+    'Accept': 'application/json, text/plain, */*'
+  }
+};
+
+utils.forEach(['delete', 'get', 'head'], function forEachMethodNoData(method) {
+  defaults.headers[method] = {};
+});
+
+utils.forEach(['post', 'put', 'patch'], function forEachMethodWithData(method) {
+  defaults.headers[method] = utils.merge(DEFAULT_CONTENT_TYPE);
+});
+
+module.exports = defaults;
+
+}).call(this,require('_process'))
+
+},{"./adapters/http":2,"./adapters/xhr":2,"./helpers/normalizeHeaderName":22,"./utils":25,"_process":48}],15:[function(require,module,exports){
 'use strict';
 
 module.exports = function bind(fn, thisArg) {
@@ -425,19 +752,19 @@ module.exports = function bind(fn, thisArg) {
   };
 };
 
-},{}],8:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 'use strict';
 
 // btoa polyfill for IE<10 courtesy https://github.com/davidchambers/Base64.js
 
 var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
 
-function InvalidCharacterError(message) {
-  this.message = message;
+function E() {
+  this.message = 'String contains an invalid character';
 }
-InvalidCharacterError.prototype = new Error;
-InvalidCharacterError.prototype.code = 5;
-InvalidCharacterError.prototype.name = 'InvalidCharacterError';
+E.prototype = new Error;
+E.prototype.code = 5;
+E.prototype.name = 'InvalidCharacterError';
 
 function btoa(input) {
   var str = String(input);
@@ -454,7 +781,7 @@ function btoa(input) {
   ) {
     charCode = str.charCodeAt(idx += 3 / 4);
     if (charCode > 0xFF) {
-      throw new InvalidCharacterError('INVALID_CHARACTER_ERR: DOM Exception 5');
+      throw new E();
     }
     block = block << 8 | charCode;
   }
@@ -463,7 +790,7 @@ function btoa(input) {
 
 module.exports = btoa;
 
-},{}],9:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -495,6 +822,8 @@ module.exports = function buildURL(url, params, paramsSerializer) {
   var serializedParams;
   if (paramsSerializer) {
     serializedParams = paramsSerializer(params);
+  } else if (utils.isURLSearchParams(params)) {
+    serializedParams = params.toString();
   } else {
     var parts = [];
 
@@ -531,8 +860,7 @@ module.exports = function buildURL(url, params, paramsSerializer) {
   return url;
 };
 
-
-},{"./../utils":17}],10:[function(require,module,exports){
+},{"./../utils":25}],18:[function(require,module,exports){
 'use strict';
 
 /**
@@ -543,10 +871,12 @@ module.exports = function buildURL(url, params, paramsSerializer) {
  * @returns {string} The combined URL
  */
 module.exports = function combineURLs(baseURL, relativeURL) {
-  return baseURL.replace(/\/+$/, '') + '/' + relativeURL.replace(/^\/+/, '');
+  return relativeURL
+    ? baseURL.replace(/\/+$/, '') + '/' + relativeURL.replace(/^\/+/, '')
+    : baseURL;
 };
 
-},{}],11:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -601,7 +931,7 @@ module.exports = (
   })()
 );
 
-},{"./../utils":17}],12:[function(require,module,exports){
+},{"./../utils":25}],20:[function(require,module,exports){
 'use strict';
 
 /**
@@ -617,7 +947,7 @@ module.exports = function isAbsoluteURL(url) {
   return /^([a-z][a-z\d\+\-\.]*:)?\/\//i.test(url);
 };
 
-},{}],13:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
@@ -687,10 +1017,33 @@ module.exports = (
   })()
 );
 
-},{"./../utils":17}],14:[function(require,module,exports){
+},{"./../utils":25}],22:[function(require,module,exports){
+'use strict';
+
+var utils = require('../utils');
+
+module.exports = function normalizeHeaderName(headers, normalizedName) {
+  utils.forEach(headers, function processHeader(value, name) {
+    if (name !== normalizedName && name.toUpperCase() === normalizedName.toUpperCase()) {
+      headers[normalizedName] = value;
+      delete headers[name];
+    }
+  });
+};
+
+},{"../utils":25}],23:[function(require,module,exports){
 'use strict';
 
 var utils = require('./../utils');
+
+// Headers whose duplicates are ignored by node
+// c.f. https://nodejs.org/api/http.html#http_message_headers
+var ignoreDuplicateOf = [
+  'age', 'authorization', 'content-length', 'content-type', 'etag',
+  'expires', 'from', 'host', 'if-modified-since', 'if-unmodified-since',
+  'last-modified', 'location', 'max-forwards', 'proxy-authorization',
+  'referer', 'retry-after', 'user-agent'
+];
 
 /**
  * Parse headers into an object
@@ -719,14 +1072,21 @@ module.exports = function parseHeaders(headers) {
     val = utils.trim(line.substr(i + 1));
 
     if (key) {
-      parsed[key] = parsed[key] ? parsed[key] + ', ' + val : val;
+      if (parsed[key] && ignoreDuplicateOf.indexOf(key) >= 0) {
+        return;
+      }
+      if (key === 'set-cookie') {
+        parsed[key] = (parsed[key] ? parsed[key] : []).concat([val]);
+      } else {
+        parsed[key] = parsed[key] ? parsed[key] + ', ' + val : val;
+      }
     }
   });
 
   return parsed;
 };
 
-},{"./../utils":17}],15:[function(require,module,exports){
+},{"./../utils":25}],24:[function(require,module,exports){
 'use strict';
 
 /**
@@ -755,30 +1115,11 @@ module.exports = function spread(callback) {
   };
 };
 
-},{}],16:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 'use strict';
 
-var utils = require('./../utils');
-
-/**
- * Transform the data for a request or a response
- *
- * @param {Object|String} data The data to be transformed
- * @param {Array} headers The headers for the request or response
- * @param {Array|Function} fns A single function or Array of functions
- * @returns {*} The resulting transformed data
- */
-module.exports = function transformData(data, headers, fns) {
-  /*eslint no-param-reassign:0*/
-  utils.forEach(fns, function transform(fn) {
-    data = fn(data, headers);
-  });
-
-  return data;
-};
-
-},{"./../utils":17}],17:[function(require,module,exports){
-'use strict';
+var bind = require('./helpers/bind');
+var isBuffer = require('is-buffer');
 
 /*global toString:true*/
 
@@ -813,7 +1154,7 @@ function isArrayBuffer(val) {
  * @returns {boolean} True if value is an FormData, otherwise false
  */
 function isFormData(val) {
-  return toString.call(val) === '[object FormData]';
+  return (typeof FormData !== 'undefined') && (val instanceof FormData);
 }
 
 /**
@@ -903,6 +1244,36 @@ function isBlob(val) {
 }
 
 /**
+ * Determine if a value is a Function
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Function, otherwise false
+ */
+function isFunction(val) {
+  return toString.call(val) === '[object Function]';
+}
+
+/**
+ * Determine if a value is a Stream
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Stream, otherwise false
+ */
+function isStream(val) {
+  return isObject(val) && isFunction(val.pipe);
+}
+
+/**
+ * Determine if a value is a URLSearchParams object
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a URLSearchParams object, otherwise false
+ */
+function isURLSearchParams(val) {
+  return typeof URLSearchParams !== 'undefined' && val instanceof URLSearchParams;
+}
+
+/**
  * Trim excess whitespace off the beginning and end of a string
  *
  * @param {String} str The String to trim
@@ -923,13 +1294,15 @@ function trim(str) {
  *  typeof document -> undefined
  *
  * react-native:
- *  typeof document.createElement -> undefined
+ *  navigator.product -> 'ReactNative'
  */
 function isStandardBrowserEnv() {
+  if (typeof navigator !== 'undefined' && navigator.product === 'ReactNative') {
+    return false;
+  }
   return (
     typeof window !== 'undefined' &&
-    typeof document !== 'undefined' &&
-    typeof document.createElement === 'function'
+    typeof document !== 'undefined'
   );
 }
 
@@ -952,7 +1325,7 @@ function forEach(obj, fn) {
   }
 
   // Force an array if not already something iterable
-  if (typeof obj !== 'object' && !isArray(obj)) {
+  if (typeof obj !== 'object') {
     /*eslint no-param-reassign:0*/
     obj = [obj];
   }
@@ -965,7 +1338,7 @@ function forEach(obj, fn) {
   } else {
     // Iterate over object keys
     for (var key in obj) {
-      if (obj.hasOwnProperty(key)) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
         fn.call(null, obj[key], key, obj);
       }
     }
@@ -1005,9 +1378,29 @@ function merge(/* obj1, obj2, obj3, ... */) {
   return result;
 }
 
+/**
+ * Extends object a by mutably adding to it the properties of object b.
+ *
+ * @param {Object} a The object to be extended
+ * @param {Object} b The object to copy properties from
+ * @param {Object} thisArg The object to bind function to
+ * @return {Object} The resulting value of object a
+ */
+function extend(a, b, thisArg) {
+  forEach(b, function assignValue(val, key) {
+    if (thisArg && typeof val === 'function') {
+      a[key] = bind(val, thisArg);
+    } else {
+      a[key] = val;
+    }
+  });
+  return a;
+}
+
 module.exports = {
   isArray: isArray,
   isArrayBuffer: isArrayBuffer,
+  isBuffer: isBuffer,
   isFormData: isFormData,
   isArrayBufferView: isArrayBufferView,
   isString: isString,
@@ -1017,13 +1410,17 @@ module.exports = {
   isDate: isDate,
   isFile: isFile,
   isBlob: isBlob,
+  isFunction: isFunction,
+  isStream: isStream,
+  isURLSearchParams: isURLSearchParams,
   isStandardBrowserEnv: isStandardBrowserEnv,
   forEach: forEach,
   merge: merge,
+  extend: extend,
   trim: trim
 };
 
-},{}],18:[function(require,module,exports){
+},{"./helpers/bind":15,"is-buffer":45}],26:[function(require,module,exports){
 (function (global){
 /*!
   * Bootstrap v4.0.0-beta.3 (https://getbootstrap.com)
@@ -7354,7 +7751,7 @@ Object.defineProperty(exports, '__esModule', { value: true });
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 
-},{"jquery":37}],19:[function(require,module,exports){
+},{"jquery":46}],27:[function(require,module,exports){
 /* ====================================================================
  * eldarion-ajax.min.js v0.16.0
  * eldarion-ajax-core v0.14.0
@@ -7389,7 +7786,7 @@ Object.defineProperty(exports, '__esModule', { value: true });
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * ==================================================================== */
 if(document.all&&!window.setTimeout.isPolyfill){var __nativeST__=window.setTimeout;window.setTimeout=function(e,t){var o=Array.prototype.slice.call(arguments,2);return __nativeST__(e instanceof Function?function(){e.apply(null,o)}:e,t)},window.setTimeout.isPolyfill=!0}if(document.all&&!window.setInterval.isPolyfill){var __nativeSI__=window.setInterval;window.setInterval=function(e,t){var o=Array.prototype.slice.call(arguments,2);return __nativeSI__(e instanceof Function?function(){e.apply(null,o)}:e,t)},window.setInterval.isPolyfill=!0}!function(e,t){"use strict";"function"==typeof define&&define.amd?define(["jquery"],t):t("object"==typeof exports?require("jquery"):e.jQuery)}(this,function(e){"use strict";var t=function(){};t.prototype._ajax=function(t,o,a,n,r){t.trigger("eldarion-ajax:begin",[t]);var c=t.triggerHandler("eldarion-ajax:modify-data",n),i="application/x-www-form-urlencoded; charset=UTF-8",p=!0,s=!0;c&&(n=c),r&&(i=!1,p=!1,s=!1),e.ajax({url:o,type:a,dataType:"json",data:n,cache:s,processData:p,contentType:i,headers:{"X-Eldarion-Ajax":!0}}).done(function(e,o,a){e||(e={}),t.trigger("eldarion-ajax:success",[t,e,o,a])}).fail(function(e,o,a){t.trigger("eldarion-ajax:error",[t,e,o,a])}).always(function(o,a,n){e(document).trigger("eldarion-ajax:complete",[t,o,a,n])})},t.prototype.click=function(o){var a=e(this),n=a.attr("href"),r=a.data("method"),c=a.data("data"),i=null,p=null;r||(r="get"),c&&(i={},c.split(",").map(function(t){p=t.split(":"),i[p[0]]=0===p[1].indexOf("#")?e(p[1]).val():p[1]})),o.preventDefault(),t.prototype._ajax(a,n,r,i)},t.prototype.submit=function(o){var a=e(this),n=a.attr("action"),r=a.attr("method");o.preventDefault(),void 0===window.FormData?t.prototype._ajax(a,n,r,a.serialize()):t.prototype._ajax(a,n,r,new FormData(a[0]),!0)},t.prototype.cancel=function(t){var o=e(this),a=o.attr("data-cancel-closest");t.preventDefault(),o.closest(a).remove()},t.prototype.timeout=function(o,a){var n=e(a),r=n.data("timeout"),c=n.data("url"),i=n.data("method");i||(i="get"),window.setTimeout(t.prototype._ajax,r,n,c,i,null)},t.prototype.interval=function(o,a){var n=e(a),r=n.data("interval"),c=n.data("url"),i=n.data("method");i||(i="get"),window.setInterval(t.prototype._ajax,r,n,c,i,null)},e(function(){e("body").on("click","a.ajax",t.prototype.click),e("body").on("submit","form.ajax",t.prototype.submit),e("body").on("click","a[data-cancel-closest]",t.prototype.cancel),e("[data-timeout]").each(t.prototype.timeout),e("[data-interval]").each(t.prototype.interval)})}),function(e,t){"use strict";"function"==typeof define&&define.amd?define(["jquery"],t):t("object"==typeof exports?require("jquery"):e.jQuery)}(this,function(e){"use strict";var t=function(){};t.prototype.redirect=function(e,t,o){return o.location?(window.location.href=o.location,!1):void 0},t.prototype.replace=function(t,o,a){e(o.data("replace")).replaceWith(a.html)},t.prototype.replaceClosest=function(e,t,o){t.closest(t.data("replace-closest")).replaceWith(o.html)},t.prototype.replaceInner=function(t,o,a){e(o.data("replace-inner")).html(a.html)},t.prototype.replaceClosestInner=function(e,t,o){t.closest(t.data("replace-closest-inner")).html(o.html)},t.prototype.append=function(t,o,a){e(o.data("append")).append(a.html)},t.prototype.prepend=function(t,o,a){e(o.data("prepend")).prepend(a.html)},t.prototype.refresh=function(t,o){e.each(e(o.data("refresh")),function(t,o){e.getJSON(e(o).data("refresh-url"),function(t){e(o).replaceWith(t.html)})})},t.prototype.refreshClosest=function(t,o){e.each(e(o.data("refresh-closest")),function(t,a){e.getJSON(e(a).data("refresh-url"),function(t){o.closest(e(a)).replaceWith(t.html)})})},t.prototype.clear=function(t,o){e(o.data("clear")).html("")},t.prototype.remove=function(t,o){e(o.data("remove")).remove()},t.prototype.clearClosest=function(e,t){t.closest(t.data("clear-closest")).html("")},t.prototype.removeClosest=function(e,t){t.closest(t.data("remove-closest")).remove()},t.prototype.fragments=function(t,o,a){a.fragments&&e.each(a.fragments,function(t,o){e(t).replaceWith(o)}),a["inner-fragments"]&&e.each(a["inner-fragments"],function(t,o){e(t).html(o)}),a["append-fragments"]&&e.each(a["append-fragments"],function(t,o){e(t).append(o)}),a["prepend-fragments"]&&e.each(a["prepend-fragments"],function(t,o){e(t).prepend(o)})},e(function(){e(document).on("eldarion-ajax:success",t.prototype.redirect),e(document).on("eldarion-ajax:success",t.prototype.fragments),e(document).on("eldarion-ajax:success","[data-replace]",t.prototype.replace),e(document).on("eldarion-ajax:success","[data-replace-closest]",t.prototype.replaceClosest),e(document).on("eldarion-ajax:success","[data-replace-inner]",t.prototype.replaceInner),e(document).on("eldarion-ajax:success","[data-replace-closest-inner]",t.prototype.replaceClosestInner),e(document).on("eldarion-ajax:success","[data-append]",t.prototype.append),e(document).on("eldarion-ajax:success","[data-prepend]",t.prototype.prepend),e(document).on("eldarion-ajax:success","[data-refresh]",t.prototype.refresh),e(document).on("eldarion-ajax:success","[data-refresh-closest]",t.prototype.refreshClosest),e(document).on("eldarion-ajax:success","[data-clear]",t.prototype.clear),e(document).on("eldarion-ajax:success","[data-remove]",t.prototype.remove),e(document).on("eldarion-ajax:success","[data-clear-closest]",t.prototype.clearClosest),e(document).on("eldarion-ajax:success","[data-remove-closest]",t.prototype.removeClosest)})});
-},{"jquery":37}],20:[function(require,module,exports){
+},{"jquery":46}],28:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -7467,7 +7864,7 @@ var EventListener = {
 module.exports = EventListener;
 }).call(this,require('_process'))
 
-},{"./emptyFunction":25,"_process":47}],21:[function(require,module,exports){
+},{"./emptyFunction":33,"_process":48}],29:[function(require,module,exports){
 /**
  * Copyright (c) 2013-present, Facebook, Inc.
  *
@@ -7501,7 +7898,7 @@ var ExecutionEnvironment = {
 };
 
 module.exports = ExecutionEnvironment;
-},{}],22:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 "use strict";
 
 /**
@@ -7531,7 +7928,7 @@ function camelize(string) {
 }
 
 module.exports = camelize;
-},{}],23:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 /**
  * Copyright (c) 2013-present, Facebook, Inc.
  *
@@ -7569,7 +7966,7 @@ function camelizeStyleName(string) {
 }
 
 module.exports = camelizeStyleName;
-},{"./camelize":22}],24:[function(require,module,exports){
+},{"./camelize":30}],32:[function(require,module,exports){
 'use strict';
 
 /**
@@ -7607,7 +8004,7 @@ function containsNode(outerNode, innerNode) {
 }
 
 module.exports = containsNode;
-},{"./isTextNode":33}],25:[function(require,module,exports){
+},{"./isTextNode":41}],33:[function(require,module,exports){
 "use strict";
 
 /**
@@ -7644,7 +8041,7 @@ emptyFunction.thatReturnsArgument = function (arg) {
 };
 
 module.exports = emptyFunction;
-},{}],26:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 (function (process){
 /**
  * Copyright (c) 2013-present, Facebook, Inc.
@@ -7665,7 +8062,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = emptyObject;
 }).call(this,require('_process'))
 
-},{"_process":47}],27:[function(require,module,exports){
+},{"_process":48}],35:[function(require,module,exports){
 /**
  * Copyright (c) 2013-present, Facebook, Inc.
  *
@@ -7690,7 +8087,7 @@ function focusNode(node) {
 }
 
 module.exports = focusNode;
-},{}],28:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 'use strict';
 
 /**
@@ -7727,7 +8124,7 @@ function getActiveElement(doc) /*?DOMElement*/{
 }
 
 module.exports = getActiveElement;
-},{}],29:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 'use strict';
 
 /**
@@ -7758,7 +8155,7 @@ function hyphenate(string) {
 }
 
 module.exports = hyphenate;
-},{}],30:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 /**
  * Copyright (c) 2013-present, Facebook, Inc.
  *
@@ -7795,7 +8192,7 @@ function hyphenateStyleName(string) {
 }
 
 module.exports = hyphenateStyleName;
-},{"./hyphenate":29}],31:[function(require,module,exports){
+},{"./hyphenate":37}],39:[function(require,module,exports){
 (function (process){
 /**
  * Copyright (c) 2013-present, Facebook, Inc.
@@ -7852,7 +8249,7 @@ function invariant(condition, format, a, b, c, d, e, f) {
 module.exports = invariant;
 }).call(this,require('_process'))
 
-},{"_process":47}],32:[function(require,module,exports){
+},{"_process":48}],40:[function(require,module,exports){
 'use strict';
 
 /**
@@ -7875,7 +8272,7 @@ function isNode(object) {
 }
 
 module.exports = isNode;
-},{}],33:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 'use strict';
 
 /**
@@ -7898,7 +8295,7 @@ function isTextNode(object) {
 }
 
 module.exports = isTextNode;
-},{"./isNode":32}],34:[function(require,module,exports){
+},{"./isNode":40}],42:[function(require,module,exports){
 /**
  * Copyright (c) 2013-present, Facebook, Inc.
  *
@@ -7964,7 +8361,7 @@ function shallowEqual(objA, objB) {
 }
 
 module.exports = shallowEqual;
-},{}],35:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 (function (process){
 /**
  * Copyright (c) 2014-present, Facebook, Inc.
@@ -8030,7 +8427,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = warning;
 }).call(this,require('_process'))
 
-},{"./emptyFunction":25,"_process":47}],36:[function(require,module,exports){
+},{"./emptyFunction":33,"_process":48}],44:[function(require,module,exports){
 /*! FileAPI 2.0.25 - BSD | git://github.com/mailru/FileAPI.git
  * FileAPI — a set of  javascript tools for working with files. Multiupload, drag'n'drop and chunked file upload. Images: crop, resize and auto orientation by EXIF.
  */
@@ -12428,7 +12825,30 @@ module.exports = warning;
     }
 }(window, window.jQuery, FileAPI));
 if( typeof define === "function" && define.amd ){ define("FileAPI", [], function (){ return FileAPI; }); }
-},{}],37:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
+/*!
+ * Determine if an object is a Buffer
+ *
+ * @author   Feross Aboukhadijeh <https://feross.org>
+ * @license  MIT
+ */
+
+// The _isBuffer check is for Safari 5-7 support, because it's missing
+// Object.prototype.constructor. Remove this eventually
+module.exports = function (obj) {
+  return obj != null && (isBuffer(obj) || isSlowBuffer(obj) || !!obj._isBuffer)
+}
+
+function isBuffer (obj) {
+  return !!obj.constructor && typeof obj.constructor.isBuffer === 'function' && obj.constructor.isBuffer(obj)
+}
+
+// For Node v0.10 support. Remove this eventually.
+function isSlowBuffer (obj) {
+  return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
+}
+
+},{}],46:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.2.1
  * https://jquery.com/
@@ -22683,7 +23103,7 @@ if ( !noGlobal ) {
 return jQuery;
 } );
 
-},{}],38:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 /*
 object-assign
 (c) Sindre Sorhus
@@ -22775,647 +23195,7 @@ module.exports = shouldUseNative() ? Object.assign : function (target, source) {
 	return to;
 };
 
-},{}],39:[function(require,module,exports){
-'use strict';
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _helpers = require('../utils/helpers');
-
-var _helpers2 = _interopRequireDefault(_helpers);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
-
-function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
-
-/* global FileAPI */
-require('fileapi');
-
-var AddImage = function (_React$Component) {
-    _inherits(AddImage, _React$Component);
-
-    function AddImage(props) {
-        _classCallCheck(this, AddImage);
-
-        var _this = _possibleConstructorReturn(this, Object.getPrototypeOf(AddImage).call(this, props));
-
-        _this.handleChange = _this.handleChange.bind(_this);
-        return _this;
-    }
-
-    _createClass(AddImage, [{
-        key: 'handleChange',
-        value: function handleChange(evt) {
-            console.log(evt);
-            var files = FileAPI.getFiles(evt);
-            var onlyImagesFilter = function onlyImagesFilter(file) {
-                return (/^image/.test(file.type)
-                );
-            };
-            var onUploadComplete = this.props.onUploadComplete;
-            var onFileUploadComplete = this.props.onFileUploadComplete;
-            var onUploadStart = this.props.onUploadStart;
-            var onProgress = this.props.onProgress;
-            var onFileProgress = this.props.onFileProgress;
-            var uploadUrl = this.props.uploadUrl;
-
-            FileAPI.filterFiles(files, onlyImagesFilter, function (files) {
-                if (files.length) {
-                    FileAPI.upload({
-                        url: uploadUrl,
-                        files: { files: files },
-                        headers: {
-                            'X-CSRFToken': _helpers2.default.getCookie('csrftoken')
-                        },
-                        filecomplete: function filecomplete(err, xhr, file, options) {
-                            if (onFileUploadComplete) {
-                                var data = JSON.parse(xhr.responseText);
-                                uploadUrl = data.upload_url;
-                                onFileUploadComplete(err, xhr, file, options);
-                            }
-                        },
-                        prepare: function prepare(file, options) {
-                            options.url = uploadUrl;
-                        },
-                        complete: function complete(err, xhr) {
-                            if (onUploadComplete) {
-                                onUploadComplete(err, xhr, files);
-                            }
-                        },
-                        progress: function progress(evt, file, xhr, options) {
-                            if (onProgress) {
-                                onProgress(evt, file, xhr, options);
-                            }
-                        },
-                        upload: function upload(xhr, options) {
-                            if (onUploadStart) {
-                                onUploadStart(xhr, options);
-                            }
-                        },
-                        fileprogress: function fileprogress(evt, file, xhr, options) {
-                            if (onFileProgress) {
-                                onFileProgress(evt, file, xhr, options);
-                            }
-                        }
-                    });
-                }
-            });
-        }
-    }, {
-        key: 'render',
-        value: function render() {
-            return _react2.default.createElement(
-                'span',
-                { className: 'btn-add-image' },
-                'Browse ',
-                _react2.default.createElement('input', { type: 'file', name: 'files', multiple: true, onChange: this.handleChange })
-            );
-        }
-    }]);
-
-    return AddImage;
-}(_react2.default.Component);
-
-AddImage.propTypes = {
-    onUploadComplete: _react2.default.PropTypes.func,
-    onFileUploadComplete: _react2.default.PropTypes.func,
-    onUploadStart: _react2.default.PropTypes.func,
-    onProgress: _react2.default.PropTypes.func,
-    onFileProgress: _react2.default.PropTypes.func,
-    uploadUrl: _react2.default.PropTypes.string.isRequired,
-    imageSetId: _react2.default.PropTypes.number
-};
-
-module.exports = AddImage;
-},{"../utils/helpers":46,"fileapi":36,"react":55}],40:[function(require,module,exports){
-'use strict';
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _Thumbnail = require('./Thumbnail');
-
-var _Thumbnail2 = _interopRequireDefault(_Thumbnail);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
-
-function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
-
-var ImageList = function (_React$Component) {
-    _inherits(ImageList, _React$Component);
-
-    function ImageList(props) {
-        _classCallCheck(this, ImageList);
-
-        var _this = _possibleConstructorReturn(this, Object.getPrototypeOf(ImageList).call(this, props));
-
-        _this.handleSelectImage = _this.handleSelectImage.bind(_this);
-        _this.render = _this.render.bind(_this);
-        return _this;
-    }
-
-    _createClass(ImageList, [{
-        key: 'handleSelectImage',
-        value: function handleSelectImage(image) {
-            this.props.onSelectImage(image);
-        }
-    }, {
-        key: 'render',
-        value: function render() {
-            var handleSelectImage = this.handleSelectImage;
-            var thumbnails = this.props.images.map(function (image, index) {
-                return _react2.default.createElement(_Thumbnail2.default, { onSelectImage: handleSelectImage, image: image, key: index });
-            });
-            return _react2.default.createElement(
-                'div',
-                { className: 'col-md-3 image-list' },
-                thumbnails
-            );
-        }
-    }]);
-
-    return ImageList;
-}(_react2.default.Component);
-
-ImageList.propTypes = {
-    images: _react2.default.PropTypes.array.isRequired,
-    onSelectImage: _react2.default.PropTypes.func.isRequired
-};
-
-module.exports = ImageList;
-},{"./Thumbnail":44,"react":55}],41:[function(require,module,exports){
-'use strict';
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-var _PreviewImage = require('./PreviewImage');
-
-var _PreviewImage2 = _interopRequireDefault(_PreviewImage);
-
-var _AddImage = require('./AddImage');
-
-var _AddImage2 = _interopRequireDefault(_AddImage);
-
-var _ImageList = require('./ImageList');
-
-var _ImageList2 = _interopRequireDefault(_ImageList);
-
-var _ProgressBar = require('./ProgressBar');
-
-var _ProgressBar2 = _interopRequireDefault(_ProgressBar);
-
-var _helpers = require('../utils/helpers');
-
-var _helpers2 = _interopRequireDefault(_helpers);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
-
-function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
-
-var ImagePanel = function (_React$Component) {
-    _inherits(ImagePanel, _React$Component);
-
-    function ImagePanel(props) {
-        _classCallCheck(this, ImagePanel);
-
-        var _this = _possibleConstructorReturn(this, Object.getPrototypeOf(ImagePanel).call(this, props));
-
-        _this.render = _this.render.bind(_this);
-        _this.componentDidMount = _this.componentDidMount.bind(_this);
-        _this.refreshWithResponse = _this.refreshWithResponse.bind(_this);
-        _this.postAndRefresh = _this.postAndRefresh.bind(_this);
-        _this.deleteImage = _this.deleteImage.bind(_this);
-        _this.markPrimary = _this.markPrimary.bind(_this);
-        _this.handleOnUploadComplete = _this.handleOnUploadComplete.bind(_this);
-        _this.handleOnFileUploadComplete = _this.handleOnFileUploadComplete.bind(_this);
-        _this.handleOnFileProgress = _this.handleOnFileProgress.bind(_this);
-        _this.handleOnSelectImage = _this.handleOnSelectImage.bind(_this);
-        _this.handleOnUploadStart = _this.handleOnUploadStart.bind(_this);
-        _this.state = {
-            selectedImage: {},
-            images: [],
-            percentageComplete: 0,
-            totalToUpload: 0,
-            totalUploaded: 0,
-            imageSetId: _this.props.initialImageSetId,
-            uploadUrl: _this.props.initialUploadUrl
-        };
-        return _this;
-    }
-
-    _createClass(ImagePanel, [{
-        key: 'componentDidMount',
-        value: function componentDidMount() {
-            console.log('mount', this.props);
-            if (this.props.imagesUrl) {
-                _helpers2.default.getImages(this.props.imagesUrl).then(this.refreshWithResponse);
-            }
-        }
-    }, {
-        key: 'refreshWithResponse',
-        value: function refreshWithResponse(dataObj) {
-            var selectedImage = dataObj.data.primaryImage;
-            if (!selectedImage.hasOwnProperty('medium_thumbnail') && dataObj.data.images.length > 0) {
-                selectedImage = dataObj.data.images[0];
-            }
-            this.setState({
-                selectedImage: selectedImage,
-                images: dataObj.data.images,
-                imageSetId: dataObj.data.pk,
-                uploadUrl: dataObj.data.upload_url
-            });
-        }
-    }, {
-        key: 'postAndRefresh',
-        value: function postAndRefresh(url) {
-            _helpers2.default.postUrl(url).then(this.refreshWithResponse);
-        }
-    }, {
-        key: 'deleteImage',
-        value: function deleteImage(image) {
-            this.postAndRefresh(image.delete_url);
-            return false;
-        }
-    }, {
-        key: 'markPrimary',
-        value: function markPrimary(image) {
-            this.postAndRefresh(image.make_primary_url);
-            return false;
-        }
-    }, {
-        key: 'handleOnUploadComplete',
-        value: function handleOnUploadComplete() {
-            this.setState({
-                totalToUpload: 0,
-                totalUploaded: 0,
-                percentageComplete: 0
-            });
-        }
-    }, {
-        key: 'handleOnFileUploadComplete',
-        value: function handleOnFileUploadComplete(err, xhr, file) {
-            var totalUploaded = this.state.totalUploaded + file.size;
-            var responseData = JSON.parse(xhr.responseText);
-            this.setState({
-                totalUploaded: totalUploaded,
-                percentageComplete: Math.round(totalUploaded / this.state.totalToUpload * 100)
-            });
-            this.refreshWithResponse({
-                data: responseData
-            });
-        }
-    }, {
-        key: 'handleOnFileProgress',
-        value: function handleOnFileProgress(evt) {
-            this.setState({
-                percentageComplete: Math.round((this.state.totalUploaded + evt.loaded) / this.state.totalToUpload * 100)
-            });
-        }
-    }, {
-        key: 'handleOnSelectImage',
-        value: function handleOnSelectImage(image) {
-            this.setState({
-                selectedImage: image
-            });
-        }
-    }, {
-        key: 'handleOnUploadStart',
-        value: function handleOnUploadStart(xhr, options) {
-            var totalToUpload = 0;
-            options.files.files.forEach(function (file) {
-                totalToUpload += file.size;
-            });
-            this.setState({
-                totalToUpload: totalToUpload
-            });
-        }
-    }, {
-        key: 'render',
-        value: function render() {
-            var progressBar = null;
-            var imageSet = null;
-            if (this.state.percentageComplete > 0) {
-                progressBar = _react2.default.createElement(_ProgressBar2.default, { percentageComplete: this.state.percentageComplete });
-            }
-            if (this.state.imageSetId) {
-                imageSet = _react2.default.createElement('input', { type: 'hidden', name: 'imageset', value: this.state.imageSetId });
-            }
-            return _react2.default.createElement(
-                'div',
-                { className: 'media-panel' },
-                _react2.default.createElement(
-                    'div',
-                    { className: 'panel-body' },
-                    progressBar,
-                    _react2.default.createElement(
-                        'div',
-                        { className: 'row' },
-                        _react2.default.createElement(_PreviewImage2.default, { image: this.state.selectedImage,
-                            deleteImage: this.deleteImage,
-                            markPrimaryImage: this.markPrimary }),
-                        _react2.default.createElement(_ImageList2.default, { images: this.state.images,
-                            onSelectImage: this.handleOnSelectImage })
-                    )
-                ),
-                imageSet,
-                _react2.default.createElement(
-                    'div',
-                    { className: 'panel-footer' },
-                    _react2.default.createElement(_AddImage2.default, { uploadUrl: this.state.uploadUrl,
-                        onUploadComplete: this.handleOnUploadComplete,
-                        onFileUploadComplete: this.handleOnFileUploadComplete,
-                        onFileProgress: this.handleOnFileProgress,
-                        onUploadStart: this.handleOnUploadStart })
-                )
-            );
-        }
-    }]);
-
-    return ImagePanel;
-}(_react2.default.Component);
-
-ImagePanel.propTypes = {
-    initialImageSetId: _react2.default.PropTypes.number,
-    imagesUrl: _react2.default.PropTypes.string,
-    initialUploadUrl: _react2.default.PropTypes.string.isRequired
-};
-
-module.exports = ImagePanel;
-},{"../utils/helpers":46,"./AddImage":39,"./ImageList":40,"./PreviewImage":42,"./ProgressBar":43,"react":55}],42:[function(require,module,exports){
-'use strict';
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
-
-function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
-
-var PreviewImage = function (_React$Component) {
-    _inherits(PreviewImage, _React$Component);
-
-    function PreviewImage(props) {
-        _classCallCheck(this, PreviewImage);
-
-        var _this = _possibleConstructorReturn(this, Object.getPrototypeOf(PreviewImage).call(this, props));
-
-        _this.handleDeleteClick = _this.handleDeleteClick.bind(_this);
-        _this.handleMarkPrimaryClick = _this.handleMarkPrimaryClick.bind(_this);
-        _this.render = _this.render.bind(_this);
-        return _this;
-    }
-
-    _createClass(PreviewImage, [{
-        key: 'handleDeleteClick',
-        value: function handleDeleteClick() {
-            this.props.deleteImage(this.props.image);
-        }
-    }, {
-        key: 'handleMarkPrimaryClick',
-        value: function handleMarkPrimaryClick() {
-            this.props.markPrimaryImage(this.props.image);
-        }
-    }, {
-        key: 'render',
-        value: function render() {
-            var previewImage = {};
-            var selectedImageClassName = 'selected-image';
-            if (this.props.image.is_primary) {
-                selectedImageClassName += ' primary';
-            }
-            if (this.props.image.medium_thumbnail) {
-                var thumb = this.props.image.medium_thumbnail;
-                var background = 'url(' + thumb + ')';
-                previewImage = {
-                    backgroundImage: background
-                };
-            } else {
-                selectedImageClassName += ' empty';
-            }
-            return _react2.default.createElement(
-                'div',
-                { className: 'col-md-9' },
-                _react2.default.createElement(
-                    'div',
-                    { className: selectedImageClassName, style: previewImage },
-                    _react2.default.createElement(
-                        'div',
-                        { id: 'overlay' },
-                        _react2.default.createElement(
-                            'a',
-                            { href: '#', className: 'delete-image', onClick: this.handleDeleteClick },
-                            _react2.default.createElement('i', { className: 'fa fa-trash fa-3x' })
-                        ),
-                        _react2.default.createElement(
-                            'a',
-                            { href: '#', className: 'make-primary-image', onClick: this.handleMarkPrimaryClick },
-                            _react2.default.createElement('i', { className: 'fa fa-check fa-3x' })
-                        )
-                    )
-                )
-            );
-        }
-    }]);
-
-    return PreviewImage;
-}(_react2.default.Component);
-
-PreviewImage.propTypes = {
-    image: _react2.default.PropTypes.object.isRequired,
-    deleteImage: _react2.default.PropTypes.func.isRequired,
-    markPrimaryImage: _react2.default.PropTypes.func.isRequired
-};
-
-module.exports = PreviewImage;
-},{"react":55}],43:[function(require,module,exports){
-"use strict";
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _react = require("react");
-
-var _react2 = _interopRequireDefault(_react);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
-
-function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
-
-var ProgressBar = function (_React$Component) {
-    _inherits(ProgressBar, _React$Component);
-
-    function ProgressBar(props) {
-        _classCallCheck(this, ProgressBar);
-
-        var _this = _possibleConstructorReturn(this, Object.getPrototypeOf(ProgressBar).call(this, props));
-
-        _this.render = _this.render.bind(_this);
-        return _this;
-    }
-
-    _createClass(ProgressBar, [{
-        key: "render",
-        value: function render() {
-            var perc = this.props.percentageComplete;
-            var style = {
-                width: perc + "%"
-            };
-            return _react2.default.createElement(
-                "div",
-                { className: "progress" },
-                _react2.default.createElement(
-                    "div",
-                    { className: "progress-bar", role: "progressbar", "aria-valuenow": this.props.percentageComplete, "aria-valuemin": "0", "aria-valuemax": "100", style: style },
-                    this.props.percentageComplete,
-                    "%"
-                )
-            );
-        }
-    }]);
-
-    return ProgressBar;
-}(_react2.default.Component);
-
-ProgressBar.propTypes = {
-    percentageComplete: _react2.default.PropTypes.number.isRequired
-};
-
-module.exports = ProgressBar;
-},{"react":55}],44:[function(require,module,exports){
-'use strict';
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _react = require('react');
-
-var _react2 = _interopRequireDefault(_react);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
-
-function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
-
-var Thumbnail = function (_React$Component) {
-    _inherits(Thumbnail, _React$Component);
-
-    function Thumbnail(props) {
-        _classCallCheck(this, Thumbnail);
-
-        var _this = _possibleConstructorReturn(this, Object.getPrototypeOf(Thumbnail).call(this, props));
-
-        _this.handleSelectImage = _this.handleSelectImage.bind(_this);
-        _this.render = _this.render.bind(_this);
-        return _this;
-    }
-
-    _createClass(Thumbnail, [{
-        key: 'handleSelectImage',
-        value: function handleSelectImage() {
-            this.props.onSelectImage(this.props.image);
-        }
-    }, {
-        key: 'render',
-        value: function render() {
-            var className = '';
-            if (this.props.image.is_primary) {
-                className = 'primary';
-            }
-            return _react2.default.createElement('img', { className: className, src: this.props.image.small_thumbnail, onClick: this.handleSelectImage });
-        }
-    }]);
-
-    return Thumbnail;
-}(_react2.default.Component);
-
-Thumbnail.propTypes = {
-    image: _react2.default.PropTypes.object.isRequired,
-    onSelectImage: _react2.default.PropTypes.func.isRequired
-};
-
-module.exports = Thumbnail;
-},{"react":55}],45:[function(require,module,exports){
-'use strict';
-
-var ImagePanel = require('./components/ImagePanel');
-
-module.exports = ImagePanel;
-},{"./components/ImagePanel":41}],46:[function(require,module,exports){
-'use strict';
-
-/* global document jQuery */
-var axios = require('axios');
-
-axios.defaults.xsrfCookieName = 'csrftoken';
-axios.defaults.xsrfHeaderName = 'X-CSRFToken';
-
-var getImages = function getImages(url) {
-    return axios.get(url);
-};
-
-var postUrl = function postUrl(url) {
-    return axios.post(url);
-};
-
-var getCookie = function getCookie(name) {
-    var cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        var cookies = document.cookie.split(';');
-        for (var i = 0; i < cookies.length; i++) {
-            var cookie = jQuery.trim(cookies[i]);
-            // Does this cookie string begin with the name we want?
-            if (cookie.substring(0, name.length + 1) === name + '=') {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-};
-
-var helpers = {
-    getImages: getImages,
-    postUrl: postUrl,
-    getCookie: getCookie
-};
-
-module.exports = helpers;
-},{"axios":1}],47:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -23601,7 +23381,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],48:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 (function (process){
 /**
  * Copyright (c) 2013-present, Facebook, Inc.
@@ -23665,7 +23445,7 @@ module.exports = checkPropTypes;
 
 }).call(this,require('_process'))
 
-},{"./lib/ReactPropTypesSecret":49,"_process":47,"fbjs/lib/invariant":31,"fbjs/lib/warning":35}],49:[function(require,module,exports){
+},{"./lib/ReactPropTypesSecret":50,"_process":48,"fbjs/lib/invariant":39,"fbjs/lib/warning":43}],50:[function(require,module,exports){
 /**
  * Copyright (c) 2013-present, Facebook, Inc.
  *
@@ -23679,7 +23459,7 @@ var ReactPropTypesSecret = 'SECRET_DO_NOT_PASS_THIS_OR_YOU_WILL_BE_FIRED';
 
 module.exports = ReactPropTypesSecret;
 
-},{}],50:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 (function (process){
 /** @license React v16.2.0
  * react-dom.development.js
@@ -39078,7 +38858,7 @@ module.exports = reactDom;
 
 }).call(this,require('_process'))
 
-},{"_process":47,"fbjs/lib/EventListener":20,"fbjs/lib/ExecutionEnvironment":21,"fbjs/lib/camelizeStyleName":23,"fbjs/lib/containsNode":24,"fbjs/lib/emptyFunction":25,"fbjs/lib/emptyObject":26,"fbjs/lib/focusNode":27,"fbjs/lib/getActiveElement":28,"fbjs/lib/hyphenateStyleName":30,"fbjs/lib/invariant":31,"fbjs/lib/shallowEqual":34,"fbjs/lib/warning":35,"object-assign":38,"prop-types/checkPropTypes":48,"react":55}],51:[function(require,module,exports){
+},{"_process":48,"fbjs/lib/EventListener":28,"fbjs/lib/ExecutionEnvironment":29,"fbjs/lib/camelizeStyleName":31,"fbjs/lib/containsNode":32,"fbjs/lib/emptyFunction":33,"fbjs/lib/emptyObject":34,"fbjs/lib/focusNode":35,"fbjs/lib/getActiveElement":36,"fbjs/lib/hyphenateStyleName":38,"fbjs/lib/invariant":39,"fbjs/lib/shallowEqual":42,"fbjs/lib/warning":43,"object-assign":47,"prop-types/checkPropTypes":49,"react":56}],52:[function(require,module,exports){
 /** @license React v16.2.0
  * react-dom.production.min.js
  *
@@ -39309,7 +39089,7 @@ var Sg={createPortal:Qg,findDOMNode:function(a){if(null==a)return null;if(1===a.
 E("40");return a._reactRootContainer?(Z.unbatchedUpdates(function(){Pg(null,null,a,!1,function(){a._reactRootContainer=null})}),!0):!1},unstable_createPortal:Qg,unstable_batchedUpdates:tc,unstable_deferredUpdates:Z.deferredUpdates,flushSync:Z.flushSync,__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED:{EventPluginHub:mb,EventPluginRegistry:Va,EventPropagators:Cb,ReactControlledComponent:qc,ReactDOMComponentTree:sb,ReactDOMEventListener:xd}};
 Z.injectIntoDevTools({findFiberByHostInstance:pb,bundleType:0,version:"16.2.0",rendererPackageName:"react-dom"});var Tg=Object.freeze({default:Sg}),Ug=Tg&&Sg||Tg;module.exports=Ug["default"]?Ug["default"]:Ug;
 
-},{"fbjs/lib/EventListener":20,"fbjs/lib/ExecutionEnvironment":21,"fbjs/lib/containsNode":24,"fbjs/lib/emptyFunction":25,"fbjs/lib/emptyObject":26,"fbjs/lib/focusNode":27,"fbjs/lib/getActiveElement":28,"fbjs/lib/shallowEqual":34,"object-assign":38,"react":55}],52:[function(require,module,exports){
+},{"fbjs/lib/EventListener":28,"fbjs/lib/ExecutionEnvironment":29,"fbjs/lib/containsNode":32,"fbjs/lib/emptyFunction":33,"fbjs/lib/emptyObject":34,"fbjs/lib/focusNode":35,"fbjs/lib/getActiveElement":36,"fbjs/lib/shallowEqual":42,"object-assign":47,"react":56}],53:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -39352,7 +39132,7 @@ if (process.env.NODE_ENV === 'production') {
 
 }).call(this,require('_process'))
 
-},{"./cjs/react-dom.development.js":50,"./cjs/react-dom.production.min.js":51,"_process":47}],53:[function(require,module,exports){
+},{"./cjs/react-dom.development.js":51,"./cjs/react-dom.production.min.js":52,"_process":48}],54:[function(require,module,exports){
 (function (process){
 /** @license React v16.2.0
  * react.development.js
@@ -40714,7 +40494,7 @@ module.exports = react;
 
 }).call(this,require('_process'))
 
-},{"_process":47,"fbjs/lib/emptyFunction":25,"fbjs/lib/emptyObject":26,"fbjs/lib/invariant":31,"fbjs/lib/warning":35,"object-assign":38,"prop-types/checkPropTypes":48}],54:[function(require,module,exports){
+},{"_process":48,"fbjs/lib/emptyFunction":33,"fbjs/lib/emptyObject":34,"fbjs/lib/invariant":39,"fbjs/lib/warning":43,"object-assign":47,"prop-types/checkPropTypes":49}],55:[function(require,module,exports){
 /** @license React v16.2.0
  * react.production.min.js
  *
@@ -40737,7 +40517,7 @@ var U={Children:{map:function(a,b,e){if(null==a)return a;var c=[];T(a,c,null,b,e
 d=a.key,g=a.ref,k=a._owner;if(null!=b){void 0!==b.ref&&(g=b.ref,k=G.current);void 0!==b.key&&(d=""+b.key);if(a.type&&a.type.defaultProps)var f=a.type.defaultProps;for(h in b)H.call(b,h)&&!I.hasOwnProperty(h)&&(c[h]=void 0===b[h]&&void 0!==f?f[h]:b[h])}var h=arguments.length-2;if(1===h)c.children=e;else if(1<h){f=Array(h);for(var l=0;l<h;l++)f[l]=arguments[l+2];c.children=f}return{$$typeof:r,type:a.type,key:d,ref:g,props:c,_owner:k}},createFactory:function(a){var b=J.bind(null,a);b.type=a;return b},
 isValidElement:K,version:"16.2.0",__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED:{ReactCurrentOwner:G,assign:m}},V=Object.freeze({default:U}),W=V&&U||V;module.exports=W["default"]?W["default"]:W;
 
-},{"fbjs/lib/emptyFunction":25,"fbjs/lib/emptyObject":26,"object-assign":38}],55:[function(require,module,exports){
+},{"fbjs/lib/emptyFunction":33,"fbjs/lib/emptyObject":34,"object-assign":47}],56:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -40749,10 +40529,10 @@ if (process.env.NODE_ENV === 'production') {
 
 }).call(this,require('_process'))
 
-},{"./cjs/react.development.js":53,"./cjs/react.production.min.js":54,"_process":47}],56:[function(require,module,exports){
+},{"./cjs/react.development.js":54,"./cjs/react.production.min.js":55,"_process":48}],57:[function(require,module,exports){
 "use strict";
 
-},{}],57:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 'use strict';
 
 var _ajax = require('./ajax');
@@ -40762,6 +40542,10 @@ var _ajax2 = _interopRequireDefault(_ajax);
 var _messages = require('./messages');
 
 var _messages2 = _interopRequireDefault(_messages);
+
+var _pinaxImagesPanel = require('./pinax-images-panel');
+
+var _pinaxImagesPanel2 = _interopRequireDefault(_pinaxImagesPanel);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -40775,7 +40559,8 @@ require('eldarion-ajax');
 
 var React = require('react');
 var ReactDOM = require('react-dom');
-var ImagePanel = require('pinax-images-panel');
+// const ImagePanel = require('pinax-images-panel');
+
 
 $(function () {
   $(document).ajaxSend(_ajax2.default);
@@ -40798,11 +40583,11 @@ $(function () {
     var imagesUrl = imagePanelElement.getAttribute('data-images-url');
     var imageSetId = parseInt(imagePanelElement.getAttribute('data-image-set-id'), 10);
     var uploadUrl = imagePanelElement.getAttribute('data-upload-url');
-    ReactDOM.render(React.createElement(ImagePanel, { imagesUrl: imagesUrl, initialUploadUrl: uploadUrl, initialImageSetId: imageSetId }), imagePanelElement);
+    ReactDOM.render(React.createElement(_pinaxImagesPanel2.default, { imagesUrl: imagesUrl, initialUploadUrl: uploadUrl, initialImageSetId: imageSetId }), imagePanelElement);
   }
 });
 
-},{"./ajax":56,"./messages":58,"bootstrap/dist/js/bootstrap.bundle":18,"eldarion-ajax":19,"jquery":37,"pinax-images-panel":45,"react":55,"react-dom":52}],58:[function(require,module,exports){
+},{"./ajax":57,"./messages":59,"./pinax-images-panel":66,"bootstrap/dist/js/bootstrap.bundle":26,"eldarion-ajax":27,"jquery":46,"react":56,"react-dom":53}],59:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -40816,5 +40601,653 @@ var handleMessageDismiss = function handleMessageDismiss() {
 
 exports.default = handleMessageDismiss;
 
-},{}]},{},[57])
+},{}],60:[function(require,module,exports){
+'use strict';
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _helpers = require('../utils/helpers');
+
+var _helpers2 = _interopRequireDefault(_helpers);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+/* global FileAPI */
+require('fileapi');
+
+var AddImage = function (_React$Component) {
+    _inherits(AddImage, _React$Component);
+
+    function AddImage(props) {
+        _classCallCheck(this, AddImage);
+
+        var _this = _possibleConstructorReturn(this, (AddImage.__proto__ || Object.getPrototypeOf(AddImage)).call(this, props));
+
+        _this.handleChange = _this.handleChange.bind(_this);
+        return _this;
+    }
+
+    _createClass(AddImage, [{
+        key: 'handleChange',
+        value: function handleChange(evt) {
+            console.log(evt);
+            var files = FileAPI.getFiles(evt);
+            var onlyImagesFilter = function onlyImagesFilter(file) {
+                return (/^image/.test(file.type)
+                );
+            };
+            var onUploadComplete = this.props.onUploadComplete;
+            var onFileUploadComplete = this.props.onFileUploadComplete;
+            var onUploadStart = this.props.onUploadStart;
+            var onProgress = this.props.onProgress;
+            var onFileProgress = this.props.onFileProgress;
+            var uploadUrl = this.props.uploadUrl;
+
+            FileAPI.filterFiles(files, onlyImagesFilter, function (files) {
+                if (files.length) {
+                    FileAPI.upload({
+                        url: uploadUrl,
+                        files: { files: files },
+                        headers: {
+                            'X-CSRFToken': _helpers2.default.getCookie('csrftoken')
+                        },
+                        filecomplete: function filecomplete(err, xhr, file, options) {
+                            if (onFileUploadComplete) {
+                                var data = JSON.parse(xhr.responseText);
+                                uploadUrl = data.upload_url;
+                                onFileUploadComplete(err, xhr, file, options);
+                            }
+                        },
+                        prepare: function prepare(file, options) {
+                            options.url = uploadUrl;
+                        },
+                        complete: function complete(err, xhr) {
+                            if (onUploadComplete) {
+                                onUploadComplete(err, xhr, files);
+                            }
+                        },
+                        progress: function progress(evt, file, xhr, options) {
+                            if (onProgress) {
+                                onProgress(evt, file, xhr, options);
+                            }
+                        },
+                        upload: function upload(xhr, options) {
+                            if (onUploadStart) {
+                                onUploadStart(xhr, options);
+                            }
+                        },
+                        fileprogress: function fileprogress(evt, file, xhr, options) {
+                            if (onFileProgress) {
+                                onFileProgress(evt, file, xhr, options);
+                            }
+                        }
+                    });
+                }
+            });
+        }
+    }, {
+        key: 'render',
+        value: function render() {
+            return _react2.default.createElement(
+                'span',
+                { className: 'btn-add-image' },
+                'Browse ',
+                _react2.default.createElement('input', { type: 'file', name: 'files', multiple: true, onChange: this.handleChange })
+            );
+        }
+    }]);
+
+    return AddImage;
+}(_react2.default.Component);
+
+AddImage.propTypes = {
+    onUploadComplete: _react2.default.PropTypes.func,
+    onFileUploadComplete: _react2.default.PropTypes.func,
+    onUploadStart: _react2.default.PropTypes.func,
+    onProgress: _react2.default.PropTypes.func,
+    onFileProgress: _react2.default.PropTypes.func,
+    uploadUrl: _react2.default.PropTypes.string.isRequired,
+    imageSetId: _react2.default.PropTypes.number
+};
+
+module.exports = AddImage;
+
+},{"../utils/helpers":67,"fileapi":44,"react":56}],61:[function(require,module,exports){
+'use strict';
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _Thumbnail = require('./Thumbnail');
+
+var _Thumbnail2 = _interopRequireDefault(_Thumbnail);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var ImageList = function (_React$Component) {
+    _inherits(ImageList, _React$Component);
+
+    function ImageList(props) {
+        _classCallCheck(this, ImageList);
+
+        var _this = _possibleConstructorReturn(this, (ImageList.__proto__ || Object.getPrototypeOf(ImageList)).call(this, props));
+
+        _this.handleSelectImage = _this.handleSelectImage.bind(_this);
+        _this.render = _this.render.bind(_this);
+        return _this;
+    }
+
+    _createClass(ImageList, [{
+        key: 'handleSelectImage',
+        value: function handleSelectImage(image) {
+            this.props.onSelectImage(image);
+        }
+    }, {
+        key: 'render',
+        value: function render() {
+            var handleSelectImage = this.handleSelectImage;
+            var thumbnails = this.props.images.map(function (image, index) {
+                return _react2.default.createElement(_Thumbnail2.default, { onSelectImage: handleSelectImage, image: image, key: index });
+            });
+            return _react2.default.createElement(
+                'div',
+                { className: 'col-md-3 image-list' },
+                thumbnails
+            );
+        }
+    }]);
+
+    return ImageList;
+}(_react2.default.Component);
+
+ImageList.propTypes = {
+    images: _react2.default.PropTypes.array.isRequired,
+    onSelectImage: _react2.default.PropTypes.func.isRequired
+};
+
+module.exports = ImageList;
+
+},{"./Thumbnail":65,"react":56}],62:[function(require,module,exports){
+'use strict';
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+var _PreviewImage = require('./PreviewImage');
+
+var _PreviewImage2 = _interopRequireDefault(_PreviewImage);
+
+var _AddImage = require('./AddImage');
+
+var _AddImage2 = _interopRequireDefault(_AddImage);
+
+var _ImageList = require('./ImageList');
+
+var _ImageList2 = _interopRequireDefault(_ImageList);
+
+var _ProgressBar = require('./ProgressBar');
+
+var _ProgressBar2 = _interopRequireDefault(_ProgressBar);
+
+var _helpers = require('../utils/helpers');
+
+var _helpers2 = _interopRequireDefault(_helpers);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var ImagePanel = function (_React$Component) {
+    _inherits(ImagePanel, _React$Component);
+
+    function ImagePanel(props) {
+        _classCallCheck(this, ImagePanel);
+
+        var _this = _possibleConstructorReturn(this, (ImagePanel.__proto__ || Object.getPrototypeOf(ImagePanel)).call(this, props));
+
+        _this.render = _this.render.bind(_this);
+        _this.componentDidMount = _this.componentDidMount.bind(_this);
+        _this.refreshWithResponse = _this.refreshWithResponse.bind(_this);
+        _this.postAndRefresh = _this.postAndRefresh.bind(_this);
+        _this.deleteImage = _this.deleteImage.bind(_this);
+        _this.markPrimary = _this.markPrimary.bind(_this);
+        _this.handleOnUploadComplete = _this.handleOnUploadComplete.bind(_this);
+        _this.handleOnFileUploadComplete = _this.handleOnFileUploadComplete.bind(_this);
+        _this.handleOnFileProgress = _this.handleOnFileProgress.bind(_this);
+        _this.handleOnSelectImage = _this.handleOnSelectImage.bind(_this);
+        _this.handleOnUploadStart = _this.handleOnUploadStart.bind(_this);
+        _this.state = {
+            selectedImage: {},
+            images: [],
+            percentageComplete: 0,
+            totalToUpload: 0,
+            totalUploaded: 0,
+            imageSetId: _this.props.initialImageSetId,
+            uploadUrl: _this.props.initialUploadUrl
+        };
+        return _this;
+    }
+
+    _createClass(ImagePanel, [{
+        key: 'componentDidMount',
+        value: function componentDidMount() {
+            console.log('mount', this.props);
+            if (this.props.imagesUrl) {
+                _helpers2.default.getImages(this.props.imagesUrl).then(this.refreshWithResponse);
+            }
+        }
+    }, {
+        key: 'refreshWithResponse',
+        value: function refreshWithResponse(dataObj) {
+            var selectedImage = dataObj.data.primaryImage;
+            if (!selectedImage.hasOwnProperty('medium_thumbnail') && dataObj.data.images.length > 0) {
+                selectedImage = dataObj.data.images[0];
+            }
+            this.setState({
+                selectedImage: selectedImage,
+                images: dataObj.data.images,
+                imageSetId: dataObj.data.pk,
+                uploadUrl: dataObj.data.upload_url
+            });
+        }
+    }, {
+        key: 'postAndRefresh',
+        value: function postAndRefresh(url) {
+            _helpers2.default.postUrl(url).then(this.refreshWithResponse);
+        }
+    }, {
+        key: 'deleteImage',
+        value: function deleteImage(image) {
+            this.postAndRefresh(image.delete_url);
+            return false;
+        }
+    }, {
+        key: 'markPrimary',
+        value: function markPrimary(image) {
+            this.postAndRefresh(image.make_primary_url);
+            return false;
+        }
+    }, {
+        key: 'handleOnUploadComplete',
+        value: function handleOnUploadComplete() {
+            this.setState({
+                totalToUpload: 0,
+                totalUploaded: 0,
+                percentageComplete: 0
+            });
+        }
+    }, {
+        key: 'handleOnFileUploadComplete',
+        value: function handleOnFileUploadComplete(err, xhr, file) {
+            var totalUploaded = this.state.totalUploaded + file.size;
+            var responseData = JSON.parse(xhr.responseText);
+            this.setState({
+                totalUploaded: totalUploaded,
+                percentageComplete: Math.round(totalUploaded / this.state.totalToUpload * 100)
+            });
+            this.refreshWithResponse({
+                data: responseData
+            });
+        }
+    }, {
+        key: 'handleOnFileProgress',
+        value: function handleOnFileProgress(evt) {
+            this.setState({
+                percentageComplete: Math.round((this.state.totalUploaded + evt.loaded) / this.state.totalToUpload * 100)
+            });
+        }
+    }, {
+        key: 'handleOnSelectImage',
+        value: function handleOnSelectImage(image) {
+            this.setState({
+                selectedImage: image
+            });
+        }
+    }, {
+        key: 'handleOnUploadStart',
+        value: function handleOnUploadStart(xhr, options) {
+            var totalToUpload = 0;
+            options.files.files.forEach(function (file) {
+                totalToUpload += file.size;
+            });
+            this.setState({
+                totalToUpload: totalToUpload
+            });
+        }
+    }, {
+        key: 'render',
+        value: function render() {
+            var progressBar = null;
+            var imageSet = null;
+            if (this.state.percentageComplete > 0) {
+                progressBar = _react2.default.createElement(_ProgressBar2.default, { percentageComplete: this.state.percentageComplete });
+            }
+            if (this.state.imageSetId) {
+                imageSet = _react2.default.createElement('input', { type: 'hidden', name: 'imageset', value: this.state.imageSetId });
+            }
+            return _react2.default.createElement(
+                'div',
+                { className: 'media-panel' },
+                _react2.default.createElement(
+                    'div',
+                    { className: 'panel-body' },
+                    progressBar,
+                    _react2.default.createElement(
+                        'div',
+                        { className: 'row' },
+                        _react2.default.createElement(_PreviewImage2.default, { image: this.state.selectedImage,
+                            deleteImage: this.deleteImage,
+                            markPrimaryImage: this.markPrimary }),
+                        _react2.default.createElement(_ImageList2.default, { images: this.state.images,
+                            onSelectImage: this.handleOnSelectImage })
+                    )
+                ),
+                imageSet,
+                _react2.default.createElement(
+                    'div',
+                    { className: 'panel-footer' },
+                    _react2.default.createElement(_AddImage2.default, { uploadUrl: this.state.uploadUrl,
+                        onUploadComplete: this.handleOnUploadComplete,
+                        onFileUploadComplete: this.handleOnFileUploadComplete,
+                        onFileProgress: this.handleOnFileProgress,
+                        onUploadStart: this.handleOnUploadStart })
+                )
+            );
+        }
+    }]);
+
+    return ImagePanel;
+}(_react2.default.Component);
+
+ImagePanel.propTypes = {
+    initialImageSetId: _react2.default.PropTypes.number,
+    imagesUrl: _react2.default.PropTypes.string,
+    initialUploadUrl: _react2.default.PropTypes.string.isRequired
+};
+
+module.exports = ImagePanel;
+
+},{"../utils/helpers":67,"./AddImage":60,"./ImageList":61,"./PreviewImage":63,"./ProgressBar":64,"react":56}],63:[function(require,module,exports){
+'use strict';
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var PreviewImage = function (_React$Component) {
+    _inherits(PreviewImage, _React$Component);
+
+    function PreviewImage(props) {
+        _classCallCheck(this, PreviewImage);
+
+        var _this = _possibleConstructorReturn(this, (PreviewImage.__proto__ || Object.getPrototypeOf(PreviewImage)).call(this, props));
+
+        _this.handleDeleteClick = _this.handleDeleteClick.bind(_this);
+        _this.handleMarkPrimaryClick = _this.handleMarkPrimaryClick.bind(_this);
+        _this.render = _this.render.bind(_this);
+        return _this;
+    }
+
+    _createClass(PreviewImage, [{
+        key: 'handleDeleteClick',
+        value: function handleDeleteClick() {
+            this.props.deleteImage(this.props.image);
+        }
+    }, {
+        key: 'handleMarkPrimaryClick',
+        value: function handleMarkPrimaryClick() {
+            this.props.markPrimaryImage(this.props.image);
+        }
+    }, {
+        key: 'render',
+        value: function render() {
+            var previewImage = {};
+            var selectedImageClassName = 'selected-image';
+            if (this.props.image.is_primary) {
+                selectedImageClassName += ' primary';
+            }
+            if (this.props.image.medium_thumbnail) {
+                var thumb = this.props.image.medium_thumbnail;
+                var background = 'url(' + thumb + ')';
+                previewImage = {
+                    backgroundImage: background
+                };
+            } else {
+                selectedImageClassName += ' empty';
+            }
+            return _react2.default.createElement(
+                'div',
+                { className: 'col-md-9' },
+                _react2.default.createElement(
+                    'div',
+                    { className: selectedImageClassName, style: previewImage },
+                    _react2.default.createElement(
+                        'div',
+                        { id: 'overlay' },
+                        _react2.default.createElement(
+                            'a',
+                            { href: '#', className: 'delete-image', onClick: this.handleDeleteClick },
+                            _react2.default.createElement('i', { className: 'fa fa-trash fa-3x' })
+                        ),
+                        _react2.default.createElement(
+                            'a',
+                            { href: '#', className: 'make-primary-image', onClick: this.handleMarkPrimaryClick },
+                            _react2.default.createElement('i', { className: 'fa fa-check fa-3x' })
+                        )
+                    )
+                )
+            );
+        }
+    }]);
+
+    return PreviewImage;
+}(_react2.default.Component);
+
+PreviewImage.propTypes = {
+    image: _react2.default.PropTypes.object.isRequired,
+    deleteImage: _react2.default.PropTypes.func.isRequired,
+    markPrimaryImage: _react2.default.PropTypes.func.isRequired
+};
+
+module.exports = PreviewImage;
+
+},{"react":56}],64:[function(require,module,exports){
+"use strict";
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _react = require("react");
+
+var _react2 = _interopRequireDefault(_react);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var ProgressBar = function (_React$Component) {
+    _inherits(ProgressBar, _React$Component);
+
+    function ProgressBar(props) {
+        _classCallCheck(this, ProgressBar);
+
+        var _this = _possibleConstructorReturn(this, (ProgressBar.__proto__ || Object.getPrototypeOf(ProgressBar)).call(this, props));
+
+        _this.render = _this.render.bind(_this);
+        return _this;
+    }
+
+    _createClass(ProgressBar, [{
+        key: "render",
+        value: function render() {
+            var perc = this.props.percentageComplete;
+            var style = {
+                width: perc + "%"
+            };
+            return _react2.default.createElement(
+                "div",
+                { className: "progress" },
+                _react2.default.createElement(
+                    "div",
+                    { className: "progress-bar", role: "progressbar", "aria-valuenow": this.props.percentageComplete, "aria-valuemin": "0", "aria-valuemax": "100", style: style },
+                    this.props.percentageComplete,
+                    "%"
+                )
+            );
+        }
+    }]);
+
+    return ProgressBar;
+}(_react2.default.Component);
+
+ProgressBar.propTypes = {
+    percentageComplete: _react2.default.PropTypes.number.isRequired
+};
+
+module.exports = ProgressBar;
+
+},{"react":56}],65:[function(require,module,exports){
+'use strict';
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _react = require('react');
+
+var _react2 = _interopRequireDefault(_react);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var Thumbnail = function (_React$Component) {
+    _inherits(Thumbnail, _React$Component);
+
+    function Thumbnail(props) {
+        _classCallCheck(this, Thumbnail);
+
+        var _this = _possibleConstructorReturn(this, (Thumbnail.__proto__ || Object.getPrototypeOf(Thumbnail)).call(this, props));
+
+        _this.handleSelectImage = _this.handleSelectImage.bind(_this);
+        _this.render = _this.render.bind(_this);
+        return _this;
+    }
+
+    _createClass(Thumbnail, [{
+        key: 'handleSelectImage',
+        value: function handleSelectImage() {
+            this.props.onSelectImage(this.props.image);
+        }
+    }, {
+        key: 'render',
+        value: function render() {
+            var className = '';
+            if (this.props.image.is_primary) {
+                className = 'primary';
+            }
+            return _react2.default.createElement('img', { className: className, src: this.props.image.small_thumbnail, onClick: this.handleSelectImage });
+        }
+    }]);
+
+    return Thumbnail;
+}(_react2.default.Component);
+
+Thumbnail.propTypes = {
+    image: _react2.default.PropTypes.object.isRequired,
+    onSelectImage: _react2.default.PropTypes.func.isRequired
+};
+
+module.exports = Thumbnail;
+
+},{"react":56}],66:[function(require,module,exports){
+'use strict';
+
+var ImagePanel = require('./components/ImagePanel');
+
+module.exports = ImagePanel;
+
+},{"./components/ImagePanel":62}],67:[function(require,module,exports){
+'use strict';
+
+/* global document jQuery */
+var axios = require('axios');
+
+axios.defaults.xsrfCookieName = 'csrftoken';
+axios.defaults.xsrfHeaderName = 'X-CSRFToken';
+
+var getImages = function getImages(url) {
+    return axios.get(url);
+};
+
+var postUrl = function postUrl(url) {
+    return axios.post(url);
+};
+
+var getCookie = function getCookie(name) {
+    var cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        var cookies = document.cookie.split(';');
+        for (var i = 0; i < cookies.length; i++) {
+            var cookie = jQuery.trim(cookies[i]);
+            // Does this cookie string begin with the name we want?
+            if (cookie.substring(0, name.length + 1) === name + '=') {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+};
+
+var helpers = {
+    getImages: getImages,
+    postUrl: postUrl,
+    getCookie: getCookie
+};
+
+module.exports = helpers;
+
+},{"axios":1}]},{},[58])
 //# sourceMappingURL=site.js.map
