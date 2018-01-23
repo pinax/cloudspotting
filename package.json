@@ -48,7 +48,7 @@
     "mocha": "4.1.0",
     "node-sass": "4.7.2",
     "onchange": "3.3.0",
-    "pinax-images-panel": "^0.2.2",
+    "pinax-images-panel": "^0.3.2",
     "react": "^16.2.0",
     "react-dom": "^16.2.0",
     "uglify-js": "3.3.7",
